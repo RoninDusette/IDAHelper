@@ -3,11 +3,12 @@ unit uMisc;
 interface
 
 uses
-  Windows, SysUtils, System.Classes;
+  Winapi.Windows, System.SysUtils, System.Classes, System.Character;
 
 function GenerateTempFileName( const Extension: String ): String;
 function GenerateTempFileNameEx( const Extension: String ): String;
 procedure CopyFile( SourceFileName, DestFileName: string );
+function RemoveWhiteSpace( const s: String ): String;
 
 implementation
 
@@ -35,14 +36,14 @@ var
   lpTempFileName: Array [ 0 .. MAX_PATH - 1 ] of Char;
   lpTempPathName: Array [ 0 .. MAX_PATH - 1 ] of Char;
 begin
-  Windows.GetTempPath( MAX_PATH, lpTempPathName );
+  Winapi.Windows.GetTempPath( MAX_PATH, lpTempPathName );
 
   // If uUnique is zero, GetTempFileName creates an empty file and closes it.
   //
   // If uUnique is not zero, you must create the file yourself.
   // Only a file name is created, because GetTempFileName is not able to guarantee that the file name is unique.
   repeat
-    Windows.GetTempFileName( lpTempPathName, nil, 1, lpTempFileName );
+    Winapi.Windows.GetTempFileName( lpTempPathName, nil, 1, lpTempFileName );
     Result := ChangeFileExt( lpTempFileName, Extension );
   until not FileExists( Result );
 
@@ -71,7 +72,7 @@ begin
   // Sizeof : Returns the number of bytes occupied by a variable or type.
   // nBufferLength : The size of the string buffer identified by lpBuffer, in TCHARs
 
-  Windows.GetTempPath( MAX_PATH, lpTempPathName );
+  Winapi.Windows.GetTempPath( MAX_PATH, lpTempPathName );
   // nBufferLength = 260 = MAX_PATH : 260 * 2 = 520 Bytes
   // nBufferLength : The size of the string buffer identified by lpBuffer, in TCHARs
 
@@ -96,6 +97,35 @@ begin
   finally
     MemoryStream.Free;
   end;
+end;
+
+function RemoveWhiteSpace( const s: String ): String;
+var
+  i, j: Integer;
+  HasSpace: Boolean;
+begin
+  SetLength( Result, Length( s ) );
+  HasSpace := False;
+  j := 0;
+  for i := 1 to Length( s ) do
+  begin
+    if Ord( s[ i ] ) = $20 then
+    begin
+      if HasSpace then
+        Continue;
+      HasSpace := True;
+      inc( j );
+      Result[ j ] := s[ i ];
+    end
+    else if ( Ord( s[ i ] ) > $20 ) and ( Ord( s[ i ] ) < $7F ) then
+    begin
+      HasSpace := False;
+      inc( j );
+      Result[ j ] := s[ i ];
+    end;
+  end;
+
+  SetLength( Result, j );
 end;
 
 end.
