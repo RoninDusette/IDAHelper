@@ -25,15 +25,12 @@ type
     Exit1: TMenuItem;
     ToolBarSVD: TToolBar;
     btnLoadSVD: TToolButton;
-    btnCheckSVD: TToolButton;
     ToolButton3: TToolButton;
     btnGotoPrev: TToolButton;
     btnGotoNext: TToolButton;
     btnGotoLast: TToolButton;
-    btnSaveSVD: TToolButton;
-    ToolButton8: TToolButton;
+    btnReload: TToolButton;
     ToolButton9: TToolButton;
-    ToolButton10: TToolButton;
     Panel1: TPanel;
     Panel2: TPanel;
     ToolBar1: TToolBar;
@@ -43,7 +40,7 @@ type
     Panel4: TPanel;
     VST_Main: TVirtualStringTree;
     Splitter3: TSplitter;
-    VST_Segment: TVirtualStringTree;
+    VST_Peripheral: TVirtualStringTree;
     Splitter2: TSplitter;
     VST_Interrupt: TVirtualStringTree;
     Splitter4: TSplitter;
@@ -54,36 +51,45 @@ type
     btnExpandTree: TToolButton;
     btnCollapseTree: TToolButton;
     ToolButton1: TToolButton;
+    btnMakeHeader: TToolButton;
+    Panel5: TPanel;
+    MemoSVDHeader: TMemo;
+    Splitter5: TSplitter;
+    btnSaveHeader: TToolButton;
+    Panel6: TPanel;
+    Panel7: TPanel;
+    RadioGroup1: TRadioGroup;
     procedure FormCreate( Sender: TObject );
     procedure btnLoadSVDClick( Sender: TObject );
     procedure Exit1Click( Sender: TObject );
     procedure About1Click( Sender: TObject );
-    procedure btnCheckSVDClick( Sender: TObject );
     procedure StatusBarDrawPanel( StatusBar: TStatusBar; Panel: TStatusPanel; const Rect: TRect );
     procedure btnGotoFirstClick( Sender: TObject );
     procedure btnGotoPrevClick( Sender: TObject );
     procedure btnGotoNextClick( Sender: TObject );
     procedure btnGotoLastClick( Sender: TObject );
-    procedure btnSaveSVDClick( Sender: TObject );
     procedure btnDecodeSVDClick( Sender: TObject );
     procedure VST_MainGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
       TextType: TVSTTextType; var CellText: string );
     procedure VST_MainGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
-    procedure VST_SegmentGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
+    procedure VST_PeripheralGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
     procedure VST_InterruptGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
-    procedure VST_SegmentGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
+    procedure VST_PeripheralGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
       TextType: TVSTTextType; var CellText: string );
     procedure VST_InterruptGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
       TextType: TVSTTextType; var CellText: string );
     procedure FormDestroy( Sender: TObject );
     procedure VST_MainFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
-    procedure VST_SegmentFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
+    procedure VST_PeripheralFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
     procedure VST_InterruptFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
     procedure btnMakeScriptClick( Sender: TObject );
     procedure btnSaveScriptClick( Sender: TObject );
     procedure btnExpandTreeClick( Sender: TObject );
     procedure btnCollapseTreeClick( Sender: TObject );
-    procedure PagesChange( Sender: TObject );
+    procedure btnReloadClick( Sender: TObject );
+    procedure btnMakeHeaderClick( Sender: TObject );
+    procedure btnSaveHeaderClick( Sender: TObject );
+    procedure RadioGroup1Click( Sender: TObject );
   private
     ProgressBarPosition: Integer;
     ProgressBar: TProgressBar;
@@ -101,10 +107,20 @@ type
     procedure UpdataSVDFileCheckResult;
     procedure GotoLineNumberOfSVDFile;
     //
-    // Decode Segments and Interrupts from VST_Main
+    // Decode Peripherals and Interrupts from VST_Main
     //
-    function DecodeInterrupts: Boolean;
-    function DecodeSegments: Boolean;
+    procedure CheckSVDFile;
+    function Decode_PeripheralInterrupt: Boolean;
+
+    //
+    // Handle Peripherals
+    //
+    procedure HandlePeripheral( Index: Integer );
+    procedure HandleRegister( Reg: PVirtualNode );
+    procedure HandleCluster( Cluster: PVirtualNode );
+    procedure HandleField( Field: PVirtualNode );
+    procedure HandleEnum( Field: PVirtualNode );
+
   public
     { Public declarations }
   end;
@@ -135,12 +151,27 @@ type
   end;
 
 type
+  // -----------------------------------------------------------------------------------------------
+  // Virtual String Tree Struct
+  // -----------------------------------------------------------------------------------------------
   PVST_MainData = ^TVST_MainData;
 
   // Free Name onFreeNode()
   TVST_MainData = record
     Name: String;
     Value: String;
+  end;
+
+  PVST_PeriphData = ^TVST_PeriphData;
+
+  // Free Name onFreeNode()
+  TVST_PeriphData = record
+    Name: String;
+    Description: String;
+    BaseAddr: String;
+    Offset: String;
+    Size: String;
+    DerivedFrom: String;
   end;
 
   PVST_IrqData = ^TVST_IrqData;
@@ -152,25 +183,23 @@ type
     Number: String;
   end;
 
-  PVST_SegData = ^TVST_SegData;
-
-  // Free Name onFreeNode()
-  TVST_SegData = record
-    Name: String;
-    Description: String;
-    BaseAddr: String;
-    Offset: String;
-    Size: String;
-    DerivedFrom: String;
-  end;
-
 type
-  TSVD_SegInfo = record
+  // -----------------------------------------------------------------------------------------------
+  // System View Description Struct
+  // -----------------------------------------------------------------------------------------------
+  PSVD_Device = ^TSVD_Device;
+
+  TSVD_Device = record
     Node: PVirtualNode;
     Name: String;
   end;
 
-  TSVD_SegData = record
+  TSVD_PeriphInfo = record
+    Node: PVirtualNode;
+    Name: String;
+  end;
+
+  TSVD_PerphData = record
     Name: String;
     Description: String;
     BaseAddr: Cardinal;
@@ -207,7 +236,6 @@ const
 var
   SVDTempFileNameOnly: String; // No Path, No Ext : 6C79A68C-1945-48BB-A20B-4FACA9A46231
 
-  SVDTempFileName: String;
   SVDFileName: String;
   SVDInfoCount: Integer;
   SVDWarningCount: Integer;
@@ -223,8 +251,10 @@ var
   ActiveNode: PVirtualNode;
   SavedNode: PVirtualNode;
 
-  SVD_SegInfoArray: array of TSVD_SegInfo;
-  SVD_SegInfoCount: Cardinal;
+  SVD_Peripherals: array of TSVD_PeriphInfo;
+  SVD_PerphCount: Cardinal;
+  SVD_PerphCapacity: Cardinal;
+
   SVD_DecodeDone: Boolean;
 
 procedure Foo;
@@ -277,6 +307,9 @@ var
   LineNumber: Integer;
   Point: TPoint;
 begin
+  if SVDErrorWarningLineArrayCount = 0 then
+    Exit;
+
   LineNumber := SVDErrorWarningLineArray[ SVDErrorWarningLineArrayIndex ].SVDLogLine;
 
   // we define number of the first visible line
@@ -291,12 +324,7 @@ begin
   MemoSVDFile.SelLength := 0;
   MemoSVDFile.Perform( EM_SCROLLCARET, 0, 0 );
 
-  ShellExecute( Handle, nil, ST3ExeName, pChar( SVDTempFileName + ':' + IntToStr( LineNumber ) ), nil, SW_SHOWNORMAL );
-end;
-
-procedure TMainForm.PagesChange( Sender: TObject );
-begin
-  // ProgressBar.Visible := Pages.ActivePageIndex = 1;
+  ShellExecute( Handle, nil, ST3ExeName, pChar( SVDFileName + ':' + IntToStr( LineNumber ) ), nil, SW_SHOWNORMAL );
 end;
 
 procedure TMainForm.ProgressBarVisible( Visible: Boolean );
@@ -308,6 +336,11 @@ begin
   // Update ProgressBar
   if Visible then
     StatusBar.Refresh;
+end;
+
+procedure TMainForm.RadioGroup1Click( Sender: TObject );
+begin
+  btnMakeHeaderClick( Self );
 end;
 
 procedure TMainForm.StatusBarDrawPanel( StatusBar: TStatusBar; Panel: TStatusPanel; const Rect: TRect );
@@ -377,8 +410,8 @@ end;
 
 procedure TMainForm.btnExpandTreeClick( Sender: TObject );
 begin
-  VST_Main.FullExpand( );
-  VST_Segment.FullExpand( );
+  VST_Main.FullExpand( VST_Main.GetFirstChild( nil ) );
+  VST_Peripheral.FullExpand( );
   VST_Interrupt.FullExpand( );
 end;
 
@@ -528,40 +561,40 @@ begin
     CellText := DataInterrupt.Description;
 end;
 
-procedure TMainForm.VST_SegmentFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
+procedure TMainForm.VST_PeripheralFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
 var
-  SegData: PVST_SegData;
+  PeriphData: PVST_PeriphData;
 begin
-  SegData := VST_Main.GetNodeData( Node );
-  SegData.Name := '';
-  SegData.Size := '';
-  SegData.Offset := '';
-  SegData.BaseAddr := '';
-  SegData.Description := '';
-  SegData.DerivedFrom := '';
+  PeriphData := VST_Main.GetNodeData( Node );
+  PeriphData.Name := '';
+  PeriphData.Size := '';
+  PeriphData.Offset := '';
+  PeriphData.BaseAddr := '';
+  PeriphData.Description := '';
+  PeriphData.DerivedFrom := '';
 end;
 
-procedure TMainForm.VST_SegmentGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
+procedure TMainForm.VST_PeripheralGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
 begin
-  NodeDataSize := Sizeof( TVST_SegData );
+  NodeDataSize := Sizeof( TVST_PeriphData );
 end;
 
-procedure TMainForm.VST_SegmentGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
+procedure TMainForm.VST_PeripheralGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
   TextType: TVSTTextType; var CellText: string );
 var
-  DataSegment: PVST_SegData;
+  DataPeripheral: PVST_PeriphData;
 begin
-  DataSegment := VST_Main.GetNodeData( Node );
+  DataPeripheral := VST_Main.GetNodeData( Node );
   if Column = 0 then
-    CellText := DataSegment.Name
+    CellText := DataPeripheral.Name
   else if Column = 1 then
-    CellText := DataSegment.BaseAddr
+    CellText := DataPeripheral.BaseAddr
   else if Column = 2 then
-    CellText := DataSegment.Offset
+    CellText := DataPeripheral.Offset
   else if Column = 3 then
-    CellText := DataSegment.Size
+    CellText := DataPeripheral.Size
   else
-    CellText := DataSegment.Description;
+    CellText := DataPeripheral.Description;
 end;
 
 function Indent( ACount: Integer ): string;
@@ -571,6 +604,12 @@ begin
     Result := Result + '  ';
     dec( ACount );
   end;
+end;
+
+procedure TMainForm.XmlProgress( Sender: TObject; Position: int64 );
+begin
+  ProgressBarPosition := Position;
+  ProgressBar.Position := ProgressBarPosition;
 end;
 
 procedure TMainForm.XmlNodeNew( Sender: TObject; ANode: TXmlNode );
@@ -633,12 +672,6 @@ begin
     [ DWORD( SavedMainNode ), DWORD( MainNode ) ] ) );
   MemoIDC.Lines.Add( '' );
 {$ENDIF}
-end;
-
-procedure TMainForm.XmlProgress( Sender: TObject; Position: int64 );
-begin
-  ProgressBarPosition := Position;
-  ProgressBar.Position := ProgressBarPosition;
 end;
 
 procedure TMainForm.XmlNodeLoaded( Sender: TObject; ANode: TXmlNode );
@@ -709,56 +742,51 @@ begin
 end;
 
 procedure TMainForm.btnLoadSVDClick( Sender: TObject );
-var
-  MemoryStream: TMemoryStream;
 begin
   if not DlgOpen.Execute then
     Exit;
 
   SVDFileName := DlgOpen.FileName;
-  SVDTempFileName := GenerateTempFileNameEx( '.svd' );
-  // 6C79A68C-1945-48BB-A20B-4FACA9A46231.svd
-  SVDTempFileNameOnly := ExtractFileName( SVDTempFileName );
-
-  // 6C79A68C-1945-48BB-A20B-4FACA9A46231
-  SVDTempFileNameOnly := Copy( SVDTempFileNameOnly, 1, Length( SVDTempFileNameOnly ) - 4 );
-
-  CopyFile( SVDFileName, SVDTempFileName );
-
-  MemoSVDFile.Lines.LoadFromFile( SVDTempFileName );
 
   Self.Caption := MainFormCaption + SVDFileName;
-  StatusBar.Panels[ 3 ].Text := SVDNoFileName;
+  StatusBar.Panels[ 3 ].Text := SVDFileName;
   StatusBar.Invalidate;
+
+  CheckSVDFile( );
 end;
 
-procedure TMainForm.btnMakeScriptClick( Sender: TObject );
+procedure TMainForm.btnReloadClick( Sender: TObject );
 begin
-  if not SVD_DecodeDone then
-    Exit;
-
+  if SVDFileName = '' then
+    btnLoadSVDClick( Self )
+  else
+    CheckSVDFile( );
 end;
 
-procedure TMainForm.btnSaveScriptClick( Sender: TObject );
+procedure TMainForm.CheckSVDFile;
+var
+  Output: AnsiString;
 begin
-  if MemoIDC.Text = '' then
-    Exit;
+  MemoSVDFile.Lines.LoadFromFile( SVDFileName );
+  MemoSVDLog.Lines.Clear;
 
-  DlgSave.Filter := 'IDC Script Files(*.idc)|*.idc';
-  if not DlgSave.Execute then
-    Exit;
+  if True then
+  begin
+    ExecAndCaptureReal( SVDConvExeName, SVDFileName,
+      procedure( const Line: PAnsiChar )
+      begin
+        MemoSVDLog.Lines.Add( String( Line ) );
+      end );
+  end
+  else
+  begin
+    ExecAndCapture( SVDConvExeName, SVDFileName, Output );
+    MemoSVDLog.Lines.Text := String( Output );
+  end;
 
-  MemoIDC.Lines.SaveToFile( DlgSave.FileName );
-end;
+  SendMessage( MemoSVDLog.Handle, WM_VSCROLL, SB_LINEDOWN, 0 );
 
-procedure TMainForm.btnSaveSVDClick( Sender: TObject );
-begin
-  DlgSave.Filter := 'SVD Files(*.svd)|*.svd';
-  DlgSave.FileName := SVDFileName;
-  if not DlgSave.Execute then
-    Exit;
-
-  CopyFile( SVDTempFileName, DlgSave.FileName );
+  UpdataSVDFileCheckResult( );
 end;
 
 {
@@ -787,37 +815,9 @@ begin
   end;
 end;
 
-procedure TMainForm.btnCheckSVDClick( Sender: TObject );
-var
-  Output: AnsiString;
-begin
-  if SVDTempFileName = '' then
-    Exit;
-
-  MemoSVDLog.Lines.Clear;
-
-  if True then
-  begin
-    ExecAndCaptureReal( SVDConvExeName, SVDTempFileName,
-      procedure( const Line: PAnsiChar )
-      begin
-        MemoSVDLog.Lines.Add( String( Line ) );
-      end );
-  end
-  else
-  begin
-    ExecAndCapture( SVDConvExeName, SVDTempFileName, Output );
-    MemoSVDLog.Lines.Text := String( Output );
-  end;
-
-  SendMessage( MemoSVDLog.Handle, WM_VSCROLL, SB_LINEDOWN, 0 );
-
-  UpdataSVDFileCheckResult( );
-end;
-
 procedure TMainForm.btnCollapseTreeClick( Sender: TObject );
 begin
-  VST_Segment.FullCollapse( );
+  VST_Peripheral.FullCollapse( );
   VST_Interrupt.FullCollapse( );
   VST_Main.FullCollapse( );
 end;
@@ -826,7 +826,7 @@ procedure TMainForm.btnDecodeSVDClick( Sender: TObject );
 var
   F: TFileStream;
 begin
-  if SVDTempFileName = '' then
+  if SVDFileName = '' then
     Exit;
 
   MemoIDC.Clear;
@@ -835,8 +835,8 @@ begin
   VST_Main.Clear;
   VST_Main.Invalidate;
 
-  VST_Segment.Clear;
-  VST_Segment.Invalidate;
+  VST_Peripheral.Clear;
+  VST_Peripheral.Invalidate;
 
   VST_Interrupt.Clear;
   VST_Interrupt.Invalidate;
@@ -854,8 +854,8 @@ begin
   VST_Main.BeginUpdate;
   ProgressBarVisible( True );
 
-  // XmlDoc.LoadFromFile( SVDTempFileName );
-  F := TFileStream.Create( SVDTempFileName, fmOpenRead or fmShareDenyWrite );
+  // XmlDoc.LoadFromFile( SVDFileName );
+  F := TFileStream.Create( SVDFileName, fmOpenRead or fmShareDenyWrite );
   ProgressBar.Max := F.Size;
 
   try
@@ -864,7 +864,7 @@ begin
     F.free;
   end;
 
-  DecodeSegments( );
+  Decode_PeripheralInterrupt( );
 
   btnExpandTreeClick( Self );
 end;
@@ -902,25 +902,13 @@ begin
   AboutBox.ShowModal;
 end;
 
-function TMainForm.DecodeInterrupts: Boolean;
-var
-  MainNode: PVirtualNode;
-  IrqNode: PVirtualNode;
-
-  MainData: PVST_MainData;
-  IrqData: PVST_IrqData;
-begin
-
-end;
-
-function TMainForm.DecodeSegments: Boolean;
+function TMainForm.Decode_PeripheralInterrupt: Boolean;
 var
   i: Integer;
   Found: Boolean;
-  SVD_SegInfoCapacity: Cardinal;
 
   NodeData: PVST_MainData;
-  SegData: TVST_SegData;
+  PeriphData: TVST_PeriphData;
   IrqData: TVST_IrqData;
 
   ANode: PVirtualNode;
@@ -953,9 +941,9 @@ begin
   if not Found then
     Exit;
 
-  SVD_SegInfoCount := 0;
-  SVD_SegInfoCapacity := 128;
-  SetLength( SVD_SegInfoArray, SVD_SegInfoCapacity );
+  SVD_PerphCount := 0;
+  SVD_PerphCapacity := 128;
+  SetLength( SVD_Peripherals, SVD_PerphCapacity );
 
   ANode := VST_Main.GetFirstChild( ANode ); // peripherals.peripheral
   while Assigned( ANode ) do
@@ -963,12 +951,12 @@ begin
     NodeData := VST_Main.GetNodeData( ANode );
     if NodeData.Name = 'peripheral' then
     begin
-      SegData.Name := '';
-      SegData.Size := '';
-      SegData.Offset := '';
-      SegData.BaseAddr := '';
-      SegData.Description := '';
-      SegData.DerivedFrom := '';
+      PeriphData.Name := '';
+      PeriphData.Size := '';
+      PeriphData.Offset := '';
+      PeriphData.BaseAddr := '';
+      PeriphData.Description := '';
+      PeriphData.DerivedFrom := '';
 
       IrqData.Name := '';
       IrqData.Number := '';
@@ -985,9 +973,9 @@ begin
           begin
             NodeData := VST_Main.GetNodeData( CNode );
             if NodeData.Name = 'offset' then
-              SegData.Offset := NodeData.Value
+              PeriphData.Offset := NodeData.Value
             else if NodeData.Name = 'size' then
-              SegData.Size := NodeData.Value;
+              PeriphData.Size := NodeData.Value;
             CNode := VST_Main.GetNextSibling( CNode );
           end;
         end
@@ -1009,62 +997,61 @@ begin
           end;
         end
         else if NodeData.Name = 'name' then
-          SegData.Name := NodeData.Value
+          PeriphData.Name := NodeData.Value
         else if NodeData.Name = 'description' then
-          // SegData.Description := RemoveWhiteSpace( NodeData.Value )
-          SegData.Description := NodeData.Value
+          // PeriphData.Description := RemoveWhiteSpace( NodeData.Value )
+          PeriphData.Description := NodeData.Value
         else if NodeData.Name = 'baseAddress' then
-          SegData.BaseAddr := NodeData.Value
+          PeriphData.BaseAddr := NodeData.Value
         else if NodeData.Name = 'derivedFrom' then
-          SegData.DerivedFrom := NodeData.Value;
+          PeriphData.DerivedFrom := NodeData.Value;
 
         // Find next node
         BNode := VST_Main.GetNextSibling( BNode );
       end;
 
-      CNode := VST_Segment.AddChild( nil );
+      CNode := VST_Peripheral.AddChild( nil );
 
-      if SegData.DerivedFrom = '' then
+      // Add Seg to Array to query late
+      SVD_Peripherals[ SVD_PerphCount ].Name := PeriphData.Name;
+      SVD_Peripherals[ SVD_PerphCount ].Node := CNode;
+      Inc( SVD_PerphCount );
+      if SVD_PerphCount = SVD_PerphCapacity then
       begin
-        SVD_SegInfoArray[ SVD_SegInfoCount ].Name := SegData.Name;
-        SVD_SegInfoArray[ SVD_SegInfoCount ].Node := CNode;
-        Inc( SVD_SegInfoCount );
-        if SVD_SegInfoCount = SVD_SegInfoCapacity then
-        begin
-          // SVD_SegInfoCapacity *= 1.5
-          SVD_SegInfoCapacity := SVD_SegInfoCapacity + SVD_SegInfoCapacity shr 1;
-          SetLength( SVD_SegInfoArray, SVD_SegInfoCapacity );
-        end;
-      end
-      else
+        // SVD_PerphCapacity *= 1.5
+        SVD_PerphCapacity := SVD_PerphCapacity + SVD_PerphCapacity shr 1;
+        SetLength( SVD_Peripherals, SVD_PerphCapacity );
+      end;
+
+      if PeriphData.DerivedFrom <> '' then
       begin
-        for i := 0 to SVD_SegInfoCount - 1 do
+        for i := 0 to SVD_PerphCount - 1 do
         begin
-          if SegData.DerivedFrom = SVD_SegInfoArray[ i ].Name then
+          if PeriphData.DerivedFrom = SVD_Peripherals[ i ].Name then
           begin
-            NodeData := VST_Main.GetNodeData( SVD_SegInfoArray[ i ].Node );
-            if SegData.BaseAddr = '' then // Never
-              SegData.BaseAddr := PVST_SegData( NodeData ).BaseAddr;
-            if SegData.Description = '' then // Maybe
-              SegData.Description := PVST_SegData( NodeData ).Description;
-            if SegData.Offset = '' then // Always ?
-              SegData.Offset := PVST_SegData( NodeData ).Offset;
-            if SegData.Size = '' then // Always ?
-              SegData.Size := PVST_SegData( NodeData ).Size;
+            NodeData := VST_Main.GetNodeData( SVD_Peripherals[ i ].Node );
+            if PeriphData.BaseAddr = '' then // Never
+              PeriphData.BaseAddr := PVST_PeriphData( NodeData ).BaseAddr;
+            if PeriphData.Description = '' then // Maybe
+              PeriphData.Description := PVST_PeriphData( NodeData ).Description;
+            if PeriphData.Offset = '' then // Always ?
+              PeriphData.Offset := PVST_PeriphData( NodeData ).Offset;
+            if PeriphData.Size = '' then // Always ?
+              PeriphData.Size := PVST_PeriphData( NodeData ).Size;
 
             break;
           end;
         end;
       end;
 
-      // To here, SegData is ready to add to VST_Segment
+      // To here, PeriphData is ready to add to VST_Peripheral
       NodeData := VST_Main.GetNodeData( CNode );
 
-      PVST_SegData( NodeData ).Name := SegData.Name;
-      PVST_SegData( NodeData ).Description := SegData.Description;
-      PVST_SegData( NodeData ).BaseAddr := SegData.BaseAddr;
-      PVST_SegData( NodeData ).Offset := SegData.Offset;
-      PVST_SegData( NodeData ).Size := SegData.Size;
+      PVST_PeriphData( NodeData ).Name := PeriphData.Name;
+      PVST_PeriphData( NodeData ).Description := PeriphData.Description;
+      PVST_PeriphData( NodeData ).BaseAddr := PeriphData.BaseAddr;
+      PVST_PeriphData( NodeData ).Offset := PeriphData.Offset;
+      PVST_PeriphData( NodeData ).Size := PeriphData.Size;
 
       if ( IrqData.Name <> '' ) or ( IrqData.Number <> '' ) then
       begin
@@ -1080,6 +1067,142 @@ begin
     // Find next node named 'peripheral'
     ANode := VST_Main.GetNextSibling( ANode );
   end;
+end;
+
+{
+  Usage: SVDConv.exe <SVD file> [Options]
+
+  Options:
+  --debug-headerfile         Add Addresses to Registers comments
+  --generate=header          Generate CMSIS header file
+
+  --fields=struct            Generate struct/union for bitfields
+  --fields=struct-ansic      Generate structs for bitfields (ANSI C)
+  --fields=macro             Generate macros for bitfields
+  --fields=enum              Generate enumerated values for bitfields
+
+  Examples:
+  Check only>        SVDConv.exe myDevice.svd
+  Header Generation> SVDConv.exe myDevice.svd --generate=header
+}
+procedure TMainForm.btnMakeHeaderClick( Sender: TObject );
+var
+  AOutputString: AnsiString;
+  FieldOption: String;
+begin
+  if SVDFileName = '' then
+    Exit;
+
+  MemoSVDHeader.Lines.Clear;
+  case RadioGroup1.ItemIndex of
+    0:
+      FieldOption := 'enum';
+    1:
+      FieldOption := 'macro';
+    2:
+      FieldOption := 'struct';
+    3:
+      FieldOption := 'ansic';
+  end;
+
+  if False then
+  begin
+    ExecAndCapture( SVDConvExeName, '"' + SVDFileName + '" --generate=header --debug-headerfile --fields=' +
+      FieldOption, AOutputString );
+    MemoSVDLog.Text := AOutputString;
+  end
+  else
+  begin
+    ExecAndCaptureReal( SVDConvExeName, '"' + SVDFileName + '" --generate=header --debug-headerfile --fields=' +
+      FieldOption,
+      procedure( const Line: PAnsiChar )
+      begin
+        MemoSVDLog.Lines.Add( String( Line ) );
+      end );
+  end;
+
+  SendMessage( MemoSVDLog.Handle, WM_VSCROLL, SB_LINEDOWN, 0 );
+
+  UpdataSVDFileCheckResult( );
+
+  MemoSVDHeader.Lines.LoadFromFile( ChangeFileExt( ExtractFileName( SVDFileName ), '.h' ) );
+end;
+
+procedure TMainForm.btnSaveHeaderClick( Sender: TObject );
+var
+  FieldOption: String;
+begin
+  if MemoSVDHeader.Text = '' then
+    Exit;
+
+  case RadioGroup1.ItemIndex of
+    0:
+      FieldOption := 'enum';
+    1:
+      FieldOption := 'macro';
+    2:
+      FieldOption := 'struct';
+    3:
+      FieldOption := 'ansic';
+  end;
+
+  DlgSave.FileName := ChangeFileExt( SVDFileName, '_' + FieldOption + '.h' );
+  DlgSave.Filter := 'C Header Files(*.h)|*.h';
+  if not DlgSave.Execute then
+    Exit;
+
+  MemoSVDHeader.Lines.SaveToFile( DlgSave.FileName );
+end;
+
+procedure TMainForm.btnSaveScriptClick( Sender: TObject );
+begin
+  if MemoIDC.Text = '' then
+    Exit;
+
+  DlgSave.Filter := 'IDC Script Files(*.idc)|*.idc';
+  if not DlgSave.Execute then
+    Exit;
+
+  MemoIDC.Lines.SaveToFile( DlgSave.FileName );
+end;
+
+procedure TMainForm.HandleCluster( Cluster: PVirtualNode );
+begin
+
+end;
+
+procedure TMainForm.HandleEnum( Field: PVirtualNode );
+begin
+
+end;
+
+procedure TMainForm.HandleField( Field: PVirtualNode );
+begin
+
+end;
+
+procedure TMainForm.HandlePeripheral( Index: Integer );
+begin
+
+end;
+
+procedure TMainForm.HandleRegister( Reg: PVirtualNode );
+begin
+
+end;
+
+procedure TMainForm.btnMakeScriptClick( Sender: TObject );
+var
+  i: Integer;
+begin
+  if not SVD_DecodeDone then
+    Exit;
+
+  for i := 0 to SVD_PerphCount - 1 do
+  begin
+
+  end;
+
 end;
 
 end.

@@ -1,7 +1,6 @@
 object MainForm: TMainForm
   Left = 0
   Top = 0
-  ActiveControl = VST_Main
   Caption = 'IDA Helper'
   ClientHeight = 821
   ClientWidth = 1375
@@ -44,7 +43,6 @@ object MainForm: TMainForm
         Width = 50
       end>
     OnDrawPanel = StatusBarDrawPanel
-    ExplicitWidth = 1184
   end
   object Pages: TPageControl
     Left = 0
@@ -55,38 +53,13 @@ object MainForm: TMainForm
     Align = alClient
     Style = tsFlatButtons
     TabOrder = 1
-    OnChange = PagesChange
-    ExplicitWidth = 1184
     object TabSheet1: TTabSheet
       Caption = 'SVD File Check'
-      object Splitter1: TSplitter
-        Left = 0
-        Top = 613
-        Width = 1367
-        Height = 10
-        Cursor = crVSplit
-        Align = alBottom
-        ExplicitTop = 61
-        ExplicitWidth = 1058
-      end
-      object MemoSVDLog: TMemo
-        Left = 0
-        Top = 623
-        Width = 1367
-        Height = 89
-        Align = alBottom
-        ReadOnly = True
-        ScrollBars = ssBoth
-        TabOrder = 0
-      end
-      object MemoSVDFile: TMemo
-        Left = 0
+      object Splitter5: TSplitter
+        Left = 800
         Top = 0
-        Width = 1367
-        Height = 613
-        Align = alClient
-        ScrollBars = ssBoth
-        TabOrder = 1
+        Width = 10
+        Height = 712
       end
       object Panel3: TPanel
         Left = 0
@@ -95,7 +68,7 @@ object MainForm: TMainForm
         Height = 5
         Align = alBottom
         BevelOuter = bvNone
-        TabOrder = 2
+        TabOrder = 0
       end
       object ToolBarSVD: TToolBar
         Left = 0
@@ -105,29 +78,29 @@ object MainForm: TMainForm
         Align = alBottom
         AutoSize = True
         ButtonHeight = 39
-        ButtonWidth = 71
+        ButtonWidth = 143
         DoubleBuffered = False
         Images = ImageList1
         GradientDirection = gdHorizontal
         ParentDoubleBuffered = False
         ShowCaptions = True
-        TabOrder = 3
+        TabOrder = 1
         object btnLoadSVD: TToolButton
           Left = 0
           Top = 0
-          Caption = 'Load ...'
+          Caption = '     Load ...    '
           ImageIndex = 68
           OnClick = btnLoadSVDClick
         end
-        object btnCheckSVD: TToolButton
-          Left = 71
+        object btnReload: TToolButton
+          Left = 143
           Top = 0
-          Caption = 'Check'
-          ImageIndex = 3
-          OnClick = btnCheckSVDClick
+          Caption = 'Reload'
+          ImageIndex = 85
+          OnClick = btnReloadClick
         end
         object ToolButton3: TToolButton
-          Left = 142
+          Left = 286
           Top = 0
           Width = 15
           Caption = 'ToolButton3'
@@ -135,74 +108,155 @@ object MainForm: TMainForm
           Style = tbsSeparator
         end
         object btnGotoFirst: TToolButton
-          Left = 157
+          Left = 301
           Top = 0
           Caption = 'First'
           ImageIndex = 52
           OnClick = btnGotoFirstClick
         end
         object btnGotoPrev: TToolButton
-          Left = 228
+          Left = 444
           Top = 0
           Caption = 'Prev'
           ImageIndex = 57
           OnClick = btnGotoPrevClick
         end
         object btnGotoNext: TToolButton
-          Left = 299
+          Left = 587
           Top = 0
           Caption = 'Next'
           ImageIndex = 87
           OnClick = btnGotoNextClick
         end
         object btnGotoLast: TToolButton
-          Left = 370
+          Left = 730
           Top = 0
           Caption = 'Last'
           ImageIndex = 30
           OnClick = btnGotoLastClick
         end
         object ToolButton21: TToolButton
-          Left = 441
+          Left = 873
           Top = 0
           Width = 15
           Caption = 'ToolButton21'
           ImageIndex = 0
           Style = tbsSeparator
         end
-        object btnSaveSVD: TToolButton
-          Left = 456
+        object btnMakeHeader: TToolButton
+          Left = 888
+          Top = 0
+          Caption = 'Make Header'
+          ImageIndex = 65
+          OnClick = btnMakeHeaderClick
+        end
+        object btnSaveHeader: TToolButton
+          Left = 1031
           Top = 0
           Caption = 'Save ...'
           ImageIndex = 141
-          OnClick = btnSaveSVDClick
-        end
-        object ToolButton8: TToolButton
-          Left = 527
-          Top = 0
-          ImageIndex = 6
+          OnClick = btnSaveHeaderClick
         end
         object ToolButton9: TToolButton
-          Left = 598
+          Left = 1174
           Top = 0
+          Caption = 'About'
           ImageIndex = 6
+          OnClick = About1Click
         end
-        object ToolButton10: TToolButton
-          Left = 669
+      end
+      object Panel5: TPanel
+        Left = 0
+        Top = 0
+        Width = 800
+        Height = 712
+        Align = alLeft
+        BevelOuter = bvNone
+        TabOrder = 2
+        object Splitter1: TSplitter
+          Left = 0
+          Top = 613
+          Width = 800
+          Height = 10
+          Cursor = crVSplit
+          Align = alBottom
+          ExplicitTop = 603
+        end
+        object MemoSVDLog: TMemo
+          Left = 0
+          Top = 623
+          Width = 800
+          Height = 89
+          Align = alBottom
+          ReadOnly = True
+          ScrollBars = ssBoth
+          TabOrder = 0
+        end
+        object MemoSVDFile: TMemo
+          Left = 0
           Top = 0
-          ImageIndex = 6
+          Width = 800
+          Height = 613
+          Align = alClient
+          ScrollBars = ssBoth
+          TabOrder = 1
+        end
+      end
+      object Panel6: TPanel
+        Left = 810
+        Top = 0
+        Width = 557
+        Height = 712
+        Align = alClient
+        BevelOuter = bvNone
+        TabOrder = 3
+        object MemoSVDHeader: TMemo
+          Left = 0
+          Top = 0
+          Width = 557
+          Height = 646
+          Align = alClient
+          ScrollBars = ssBoth
+          TabOrder = 0
+        end
+        object Panel7: TPanel
+          Left = 0
+          Top = 646
+          Width = 557
+          Height = 10
+          Align = alBottom
+          BevelOuter = bvNone
+          TabOrder = 1
+        end
+        object RadioGroup1: TRadioGroup
+          Left = 0
+          Top = 656
+          Width = 557
+          Height = 56
+          Align = alBottom
+          Caption = ' Field Option '
+          Columns = 4
+          ItemIndex = 0
+          Items.Strings = (
+            'Enum'
+            'Macro'
+            'Struct'
+            'Ansi Struct')
+          TabOrder = 2
+          OnClick = RadioGroup1Click
         end
       end
     end
     object TabSheet2: TTabSheet
       Caption = 'SVD File Decode'
       ImageIndex = 1
-      ExplicitWidth = 1176
       object Splitter4: TSplitter
         Left = 800
         Top = 0
         Width = 10
         Height = 712
+        ExplicitLeft = 806
+        ExplicitTop = -1
       end
       object Panel2: TPanel
         Left = 0
@@ -212,8 +266,6 @@ object MainForm: TMainForm
         Align = alBottom
         BevelOuter = bvNone
         TabOrder = 0
-        ExplicitTop = 673
-        ExplicitWidth = 1176
       end
       object ToolBar1: TToolBar
         Left = 0
@@ -223,16 +275,13 @@ object MainForm: TMainForm
         Align = alBottom
         AutoSize = True
         ButtonHeight = 39
-        ButtonWidth = 127
+        ButtonWidth = 159
         DoubleBuffered = False
         Images = ImageList1
         GradientDirection = gdHorizontal
         ParentDoubleBuffered = False
         ShowCaptions = True
         TabOrder = 1
-        ExplicitTop = 678
-        ExplicitWidth = 1176
-        ExplicitHeight = 78
         object btnDecodeSVD: TToolButton
           Left = 0
           Top = 0
@@ -241,38 +290,40 @@ object MainForm: TMainForm
           OnClick = btnDecodeSVDClick
         end
         object btnExpandTree: TToolButton
-          Left = 127
+          Left = 159
           Top = 0
           Caption = 'Expand Tree'
           ImageIndex = 137
           OnClick = btnExpandTreeClick
         end
         object btnCollapseTree: TToolButton
-          Left = 254
+          Left = 318
           Top = 0
           Caption = 'Collapse Tree'
           ImageIndex = 138
           OnClick = btnCollapseTreeClick
         end
+        object ToolButton1: TToolButton
+          Left = 477
+          Top = 0
+          Width = 15
+          Caption = 'ToolButton1'
+          ImageIndex = 142
+          Style = tbsSeparator
+        end
         object btnMakeScript: TToolButton
-          Left = 381
+          Left = 492
           Top = 0
           Caption = 'Make Script'
           ImageIndex = 65
           OnClick = btnMakeScriptClick
         end
         object btnSaveScript: TToolButton
-          Left = 508
+          Left = 651
           Top = 0
-          Caption = 'Save Script ...'
+          Caption = '  Save Script ...  '
           ImageIndex = 141
           OnClick = btnSaveScriptClick
-        end
-        object ToolButton1: TToolButton
-          Left = 635
-          Top = 0
-          Caption = 'ToolButton1'
-          ImageIndex = 142
         end
       end
       object Panel4: TPanel
@@ -283,7 +334,6 @@ object MainForm: TMainForm
         Align = alLeft
         BevelOuter = bvNone
         TabOrder = 2
-        ExplicitHeight = 673
         object Splitter3: TSplitter
           Left = 0
           Top = 492
@@ -323,7 +373,6 @@ object MainForm: TMainForm
           OnFreeNode = VST_MainFreeNode
           OnGetText = VST_MainGetText
           OnGetNodeDataSize = VST_MainGetNodeDataSize
-          ExplicitHeight = 453
           Columns = <
             item
               Position = 0
@@ -336,7 +385,7 @@ object MainForm: TMainForm
               WideText = 'Value'
             end>
         end
-        object VST_Segment: TVirtualStringTree
+        object VST_Peripheral: TVirtualStringTree
           Left = 0
           Top = 502
           Width = 800
@@ -351,10 +400,9 @@ object MainForm: TMainForm
           Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
           ScrollBarOptions.AlwaysVisible = True
           TabOrder = 1
-          OnFreeNode = VST_SegmentFreeNode
-          OnGetText = VST_SegmentGetText
-          OnGetNodeDataSize = VST_SegmentGetNodeDataSize
-          ExplicitTop = 463
+          OnFreeNode = VST_PeripheralFreeNode
+          OnGetText = VST_PeripheralGetText
+          OnGetNodeDataSize = VST_PeripheralGetNodeDataSize
           Columns = <
             item
               Position = 0
@@ -400,7 +448,6 @@ object MainForm: TMainForm
           OnFreeNode = VST_InterruptFreeNode
           OnGetText = VST_InterruptGetText
           OnGetNodeDataSize = VST_InterruptGetNodeDataSize
-          ExplicitTop = 573
           Columns = <
             item
               Position = 0
@@ -428,8 +475,6 @@ object MainForm: TMainForm
         ReadOnly = True
         ScrollBars = ssBoth
         TabOrder = 3
-        ExplicitWidth = 366
-        ExplicitHeight = 673
       end
     end
   end
@@ -441,19 +486,18 @@ object MainForm: TMainForm
     Align = alTop
     BevelOuter = bvNone
     TabOrder = 2
-    ExplicitWidth = 1184
   end
   object DlgOpen: TOpenDialog
     Filter = 'SVD Files(*.svd)|*.svd'
     Options = [ofHideReadOnly, ofPathMustExist, ofFileMustExist, ofEnableSizing]
-    Left = 192
-    Top = 16
+    Left = 304
+    Top = 65528
   end
   object ImageList1: TImageList
-    Left = 104
-    Top = 8
+    Left = 488
+    Top = 65528
     Bitmap = {
-      494C0101BC00D8005C0010001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C0101BC00D800680010001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000000003000001002000000000000000
       0300000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000
@@ -6798,8 +6842,8 @@ object MainForm: TMainForm
   end
   object MainMenu1: TMainMenu
     Images = ImageList1
-    Left = 528
-    Top = 416
+    Left = 424
+    Top = 65528
     object File1: TMenuItem
       Caption = 'File'
       object Exit1: TMenuItem
@@ -6820,7 +6864,7 @@ object MainForm: TMainForm
   object DlgSave: TSaveDialog
     Filter = 'SVD Files(*.svd)|*.svd'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
-    Left = 336
+    Left = 360
     Top = 65528
   end
 end

@@ -58,7 +58,7 @@ begin
   saSecurity.nLength := SizeOf( TSecurityAttributes );
   saSecurity.bInheritHandle := true;
   saSecurity.lpSecurityDescriptor := nil;
-  CommandAndParameters := ACommand + ' "' + AParameters + '"';
+  CommandAndParameters := ACommand + ' ' + AParameters;
   if CreatePipe( hRead, hWrite, @saSecurity, 0 ) then
     try
       FillChar( suiStartup, SizeOf( TStartupInfo ), #0 );
