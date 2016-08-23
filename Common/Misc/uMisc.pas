@@ -3,12 +3,62 @@ unit uMisc;
 interface
 
 uses
-  Winapi.Windows, System.SysUtils, System.Classes, System.Character;
+  Winapi.Windows, System.SysUtils, System.Classes, System.Character, Winapi.Messages, Variants, Forms,
+  Generics.Collections, Generics.Defaults;
 
+type
+  TArg< T > = reference to procedure( const Arg: T );
+
+type
+  TDynArrayType< T > = array of T;
+
+  TDynArrayClass< T > = class
+  public
+    class procedure Inc( var DynArray: TDynArrayType< T >; var Count: Cardinal; var Capacity: Cardinal );
+  end;
+
+procedure DynArrayFoo;
+
+// Generate Temp FileName uses Windows API GetTempFileName()
 function GenerateTempFileName( const Extension: String ): String;
+
+// Generate Temp FileName uses GUID -- CreateGUID()
 function GenerateTempFileNameEx( const Extension: String ): String;
-procedure CopyFile( SourceFileName, DestFileName: string );
+
+// Remove Char < 0x20 or Char > 0x7F, and Merge Multi 0x20 Spaces
 function RemoveWhiteSpace( const s: String ): String;
+
+// CopyFile uses TMemoryStream
+procedure CopyFile( SourceFileName, DestFileName: string );
+
+// Capture all to Aoutput
+function ExecAndCapture( const ACommand, AParameters: String; var AOutput: AnsiString ): integer;
+
+// Capture Every Line
+procedure ExecAndCaptureReal( const ACommand, AParameters: String; CallBack: TArg< PAnsiChar > );
+{
+  procedure TForm1.CaptureToMemo( const Line: PAnsiChar );
+  begin
+  Memo1.Lines.Add( String( Line ) );
+  end;
+
+  procedure TForm1.Button1Click( Sender: TObject );
+  begin
+  ExecAndCaptureReal( ACommand.Text, AParameters.Text, CaptureToMemo );
+  end;
+
+  procedure TForm1.Button1Click( Sender: TObject );
+  begin
+  ExecAndCaptureReal
+  (
+  ComboBox1.Text, Edit1.Text,
+  procedure( const Line: PAnsiChar )
+  begin
+  Memo1.Lines.Add( String( Line ) );
+  end
+  );
+  end;
+}
 
 implementation
 
@@ -101,7 +151,7 @@ end;
 
 function RemoveWhiteSpace( const s: String ): String;
 var
-  i, j: Integer;
+  i, j: integer;
   HasSpace: Boolean;
 begin
   SetLength( Result, Length( s ) );
@@ -114,18 +164,212 @@ begin
       if HasSpace then
         Continue;
       HasSpace := True;
-      inc( j );
+      Inc( j );
       Result[ j ] := s[ i ];
     end
     else if ( Ord( s[ i ] ) > $20 ) and ( Ord( s[ i ] ) < $7F ) then
     begin
       HasSpace := False;
-      inc( j );
+      Inc( j );
       Result[ j ] := s[ i ];
     end;
   end;
 
   SetLength( Result, j );
+end;
+
+procedure ExecAndCaptureReal( const ACommand, AParameters: String; CallBack: TArg< PAnsiChar > );
+const
+  CReadBuffer = 2400;
+var
+  saSecurity: TSecurityAttributes;
+  hRead: THandle;
+  hWrite: THandle;
+  suiStartup: TStartupInfo;
+  piProcess: TProcessInformation;
+  pBuffer: array [ 0 .. CReadBuffer ] of AnsiChar;
+  dBuffer: array [ 0 .. CReadBuffer ] of AnsiChar;
+  dRead: DWORD;
+  dRunning: DWORD;
+  dAvailable: DWORD;
+  CommandAndParameters: string;
+begin
+  saSecurity.nLength := SizeOf( TSecurityAttributes );
+  saSecurity.bInheritHandle := True;
+  saSecurity.lpSecurityDescriptor := nil;
+  CommandAndParameters := ACommand + ' ' + AParameters;
+  if CreatePipe( hRead, hWrite, @saSecurity, 0 ) then
+    try
+      FillChar( suiStartup, SizeOf( TStartupInfo ), #0 );
+      suiStartup.cb := SizeOf( TStartupInfo );
+      suiStartup.hStdInput := hRead;
+      suiStartup.hStdOutput := hWrite;
+      suiStartup.hStdError := hWrite;
+      suiStartup.dwFlags := STARTF_USESTDHANDLES or STARTF_USESHOWWINDOW;
+      suiStartup.wShowWindow := SW_HIDE;
+      if CreateProcess( nil, PChar( CommandAndParameters ), @saSecurity, @saSecurity, True, NORMAL_PRIORITY_CLASS, nil,
+        nil, suiStartup, piProcess ) then
+        try
+          repeat
+            dRunning := WaitForSingleObject( piProcess.hProcess, 100 );
+            PeekNamedPipe( hRead, nil, 0, nil, @dAvailable, nil );
+            if ( dAvailable > 0 ) then
+              repeat
+                dRead := 0;
+                ReadFile( hRead, pBuffer[ 0 ], CReadBuffer, dRead, nil );
+                pBuffer[ dRead ] := #0;
+                OemToCharA( pBuffer, dBuffer );
+                CallBack( dBuffer );
+              until ( dRead < CReadBuffer );
+            Application.ProcessMessages;
+          until ( dRunning <> WAIT_TIMEOUT );
+        finally
+          CloseHandle( piProcess.hProcess );
+          CloseHandle( piProcess.hThread );
+        end;
+    finally
+      CloseHandle( hRead );
+      CloseHandle( hWrite );
+    end;
+end;
+
+function ExecAndCapture( const ACommand, AParameters: String; var AOutput: AnsiString ): integer;
+type
+  TAnoPipe = record
+    Input: THandle;
+    Output: THandle;
+  end;
+
+const
+  cBufferSize = 2048;
+
+var
+  ACmdLine: string;
+
+  vStartupInfo: TStartupInfo;
+  vSecurityAttributes: TSecurityAttributes;
+  vReadBytes: DWORD;
+  vProcessInfo: TProcessInformation;
+  vStdInPipe: TAnoPipe;
+  vStdOutPipe: TAnoPipe;
+
+  pBuffer: array [ 0 .. cBufferSize ] of AnsiChar;
+  dBuffer: array [ 0 .. cBufferSize ] of AnsiChar;
+begin
+  Result := 0;
+
+  ACmdLine := ACommand + ' ' + AParameters;
+
+  with vSecurityAttributes do
+  begin
+    nLength := SizeOf( TSecurityAttributes );
+    bInheritHandle := True;
+    lpSecurityDescriptor := nil;
+  end;
+
+  // Create anonymous pipe for standard input
+  if not CreatePipe( vStdInPipe.Output, vStdInPipe.Input, @vSecurityAttributes, 0 ) then
+    raise Exception.Create( 'Failed to create pipe for standard input. System error message: ' +
+      SysErrorMessage( GetLastError ) );
+
+  try
+    // Create anonymous pipe for standard output (and also for standard error)
+    if not CreatePipe( vStdOutPipe.Output, vStdOutPipe.Input, @vSecurityAttributes, 0 ) then
+      raise Exception.Create( 'Failed to create pipe for standard output. System error message: ' +
+        SysErrorMessage( GetLastError ) );
+
+    try
+      // initialize the startup info to match our purpose
+      FillChar( vStartupInfo, SizeOf( TStartupInfo ), #0 );
+      vStartupInfo.cb := SizeOf( TStartupInfo );
+      vStartupInfo.wShowWindow := SW_HIDE; // we don't want to show the process
+      // assign our pipe for the process' standard input
+      vStartupInfo.hStdInput := vStdInPipe.Output;
+      // assign our pipe for the process' standard output
+      vStartupInfo.hStdOutput := vStdOutPipe.Input;
+      vStartupInfo.dwFlags := STARTF_USESTDHANDLES or STARTF_USESHOWWINDOW;
+
+      if not CreateProcess( nil, PChar( ACmdLine ), @vSecurityAttributes, @vSecurityAttributes, True,
+        NORMAL_PRIORITY_CLASS, nil, nil, vStartupInfo, vProcessInfo ) then
+        raise Exception.Create( 'Failed creating the console process. System error msg: ' +
+          SysErrorMessage( GetLastError ) );
+
+      try
+        // wait until the console program terminated
+        while WaitForSingleObject( vProcessInfo.hProcess, 50 ) = WAIT_TIMEOUT do
+          Sleep( 0 );
+
+        // clear the output storage
+        AOutput := '';
+        // Read text returned by the console program in its StdOut channel
+        // The problem is that the console application emits UTF-16.
+        repeat
+          ReadFile( vStdOutPipe.Output, pBuffer[ 0 ], cBufferSize, vReadBytes, nil );
+          if vReadBytes > 0 then
+          begin
+            pBuffer[ vReadBytes ] := #0;
+            OemToCharA( pBuffer, dBuffer );
+            AOutput := AOutput + AnsiString( dBuffer );
+            Inc( Result, vReadBytes );
+          end;
+        until ( vReadBytes < cBufferSize );
+
+      finally
+        CloseHandle( vProcessInfo.hProcess );
+        CloseHandle( vProcessInfo.hThread );
+      end;
+
+    finally
+      CloseHandle( vStdOutPipe.Input );
+      CloseHandle( vStdOutPipe.Output );
+    end;
+
+  finally
+    CloseHandle( vStdInPipe.Input );
+    CloseHandle( vStdInPipe.Output );
+  end;
+end;
+
+{ TDynArrayClass<T> }
+
+class procedure TDynArrayClass< T >.Inc( var DynArray: TDynArrayType< T >; var Count: Cardinal;
+  var Capacity: Cardinal );
+var
+  Delta: integer;
+begin
+  Count := Count + 1;
+
+  if Count < Capacity then
+    Delta := 0
+  else if Capacity > 64 then
+    Delta := Capacity div 4
+  else if Capacity > 8 then
+    Delta := 16
+  else
+    Delta := 4;
+
+  Capacity := Capacity + Delta;
+
+  if Delta > 0 then
+    SetLength( DynArray, Capacity );
+end;
+
+procedure DynArrayFoo;
+var
+  Foo: TDynArrayType< integer >;
+  Count: Cardinal;
+  Capacity: Cardinal;
+  i: integer;
+begin
+  Count := 0;
+  Capacity := 4;
+
+  SetLength( Foo, Capacity );
+
+  for i := 0 to 512 do
+    TDynArrayClass< integer >.Inc( Foo, Count, Capacity );       // 255, 256, 285  : 512, 513, 556
+
+  SetLength( Foo, Count );
 end;
 
 end.

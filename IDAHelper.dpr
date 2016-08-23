@@ -4,7 +4,6 @@ uses
   Vcl.Forms,
   uMain in 'Source\uMain.pas' {MainForm},
   uAbout in 'Source\uAbout.pas' {AboutBox},
-  uExecAndCapture in 'Common\Misc\uExecAndCapture.pas',
   uMisc in 'Common\Misc\uMisc.pas',
   NativeXml in 'Common\NativeXML\NativeXml.pas',
   NativeXmlC14n in 'Common\NativeXML\NativeXmlC14n.pas',
@@ -14,7 +13,9 @@ uses
   sdDebug in 'Common\NativeXML\sdDebug.pas',
   sdSortedLists in 'Common\NativeXML\sdSortedLists.pas',
   sdStreams in 'Common\NativeXML\sdStreams.pas',
-  sdStringTable in 'Common\NativeXML\sdStringTable.pas';
+  sdStringTable in 'Common\NativeXML\sdStringTable.pas',
+  uSVD_Type in 'Source\uSVD_Type.pas',
+  uIDC_Script in 'Source\uIDC_Script.pas';
 
 {$R *.res}
 
