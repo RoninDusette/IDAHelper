@@ -7,7 +7,7 @@ uses
   System.Classes, System.Variants, System.SysUtils, System.ImageList, // System
   Vcl.Forms, Vcl.Menus, Vcl.ImgList, Vcl.Graphics, Vcl.Dialogs, Vcl.ToolWin, // VCL
   Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, // VCL Controls
-  NativeXml, sdDebug, VirtualTrees, uSVD_Type;
+  NativeXml, sdDebug, VirtualTrees, uSVD_Type, uIDC_Script;
 
 type
   TMainForm = class( TForm )
@@ -127,11 +127,15 @@ type
     //
     // From Top to Bottom
     //
+    procedure ClearDevice;
+
     procedure DecodeDevice;
+    procedure DecodeDevice0;
     procedure DecodePeripherals( Node: PVirtualNode; peripherals: PSVD_Peripherals );
     procedure DecodePeripheral( Node: PVirtualNode; peripheral: PSVD_Peripheral );
     //
     procedure DecodeRegisters( Node: PVirtualNode; registers: PSVD_Registers );
+
     // 1.3: nesting of cluster is supported
     procedure DecodeCluster( Node: PVirtualNode; cluster: PSVD_Cluster );
     procedure DecodeRegister( Node: PVirtualNode; _register: PSVD_Register );
@@ -260,6 +264,10 @@ var
   ProgressBarStyle: Integer;
 begin
   ReportMemoryLeaksOnShutdown := True;
+
+  ClearDevice( );
+  // FillChar( SVD_Device, 0, Sizeof( SVD_Device ) );
+
   SVDFileName := '';
   SVDInfoCount := 0;
   SVDWarningCount := 0;
@@ -281,6 +289,8 @@ end;
 
 procedure TMainForm.FormDestroy( Sender: TObject );
 begin
+  ClearDevice( );
+
   if Assigned( ProgressBar ) then
     ProgressBar.free;
 
@@ -345,12 +355,10 @@ begin
       if Panel.Index = 0 then // Error
       begin
         Font.Color := clRed;
-      end
-      else if Panel.Index = 1 then // Warning
+      end else if Panel.Index = 1 then // Warning
       begin
         Font.Color := clBlue;
-      end
-      else if Panel.Index = 2 then // Info
+      end else if Panel.Index = 2 then // Info
       begin
         Font.Color := clBlack;
       end
@@ -364,8 +372,7 @@ begin
       // DrawText( StatusBar.Canvas.Decode, PChar( Panel.Text ), -1,
       // RectForText, DT_SINGLELINE or DT_VCENTER or DT_LEFT );
     end;
-  end
-  else if Pages.ActivePageIndex = 1 then
+  end else if Pages.ActivePageIndex = 1 then
   begin
     with StatusBar.Canvas do
     begin
@@ -382,9 +389,7 @@ begin
           Width := Rect.Right - Rect.Left - 10;
           Height := Rect.Bottom - Rect.Top - 4;
         end;
-      end
-      else
-      begin
+      end else begin
         FillRect( RectForText );
         TextOut( RectForText.Left + 5, RectForText.Top + 2, Panel.Text );
         // DrawText( StatusBar.Canvas.Decode, PChar( Panel.Text ), -1,
@@ -636,15 +641,13 @@ begin
     MainData := VST_Main.GetNodeData( ActiveNode );
     MainData.name := iNode.name;
     MainData.value := 'Expand to see more information';
-  end
-  else if ANode.ElementType = xeAttribute then
+  end else if ANode.ElementType = xeAttribute then
   begin
     ActiveNode := VST_Main.AddChild( ActiveNode );
     MainData := VST_Main.GetNodeData( ActiveNode );
     MainData.name := 'Attribute name to be set';
     MainData.value := 'Attribute value To be set';
-  end
-  else if ANode.ElementType = xeCharData then
+  end else if ANode.ElementType = xeCharData then
   begin
     if False then
     begin
@@ -715,15 +718,13 @@ begin
 
       ActiveNode := ActiveNode.Parent;
     end;
-  end
-  else if ( ANode.ElementType = xeAttribute ) then
+  end else if ( ANode.ElementType = xeAttribute ) then
   begin
     MainData := VST_Main.GetNodeData( ActiveNode );
     MainData.name := iNode.name;
     MainData.value := iNode.value;
     ActiveNode := ActiveNode.Parent;
-  end
-  else if ANode.ElementType = xeCharData then
+  end else if ANode.ElementType = xeCharData then
   begin
     if False then
     begin
@@ -777,9 +778,7 @@ begin
       begin
         MemoSVDLog.Lines.Add( String( Line ) );
       end );
-  end
-  else
-  begin
+  end else begin
     ExecAndCapture( SVDConvExeName, SVDFileName, Output );
     MemoSVDLog.Lines.Text := String( Output );
   end;
@@ -805,9 +804,7 @@ begin
       StatusBar.Panels[ 3 ].Text := SVDFileName
     else
       StatusBar.Panels[ 3 ].Text := SVDNoFileName;
-  end
-  else
-  begin
+  end else begin
     StatusBar.Panels[ 0 ].Text := '';
     StatusBar.Panels[ 1 ].Text := '';
     StatusBar.Panels[ 2 ].Text := '';
@@ -1000,8 +997,7 @@ begin
               PeriphData.Size := NodeData.value;
             CNode := VST_Main.GetNextSibling( CNode );
           end;
-        end
-        else if NodeData.name = 'interrupt' then
+        end else if NodeData.name = 'interrupt' then
         begin
           CNode := VST_Main.GetFirstChild( BNode );
           while Assigned( CNode ) do
@@ -1017,8 +1013,7 @@ begin
 
             CNode := VST_Main.GetNextSibling( CNode );
           end;
-        end
-        else if NodeData.name = 'name' then
+        end else if NodeData.name = 'name' then
           PeriphData.name := NodeData.value
         else if NodeData.name = 'description' then
           // PeriphData.Description := RemoveWhiteSpace( NodeData.value )
@@ -1126,9 +1121,7 @@ begin
     ExecAndCapture( SVDConvExeName, '"' + SVDFileName + '" --generate=header --debug-headerfile --fields=' +
       FieldOption, AOutputString );
     MemoSVDLog.Text := AOutputString;
-  end
-  else
-  begin
+  end else begin
     ExecAndCaptureReal( SVDConvExeName, '"' + SVDFileName + '" --generate=header --debug-headerfile --fields=' +
       FieldOption,
       procedure( const Line: PAnsiChar )
@@ -1175,6 +1168,7 @@ begin
   if MemoIDC.Text = '' then
     Exit;
 
+  DlgSave.FileName := ChangeFileExt( SVDFileName, '.idc' );
   DlgSave.Filter := 'IDC Script Files(*.idc)|*.idc';
   if not DlgSave.Execute then
     Exit;
@@ -1192,8 +1186,10 @@ begin
     Data := VST_Main.GetNodeData( Node );
 
     if Data.name = 'derivedFrom' then
-      eumeratedValue.DerivedFrom := Data.value
-    else if Data.name = 'name' then
+    begin
+      eumeratedValue.DerivedFrom := Data.value;
+
+    end else if Data.name = 'name' then
       eumeratedValue.name := Data.value
     else if Data.name = 'description' then
       eumeratedValue.Description := Data.value
@@ -1205,6 +1201,13 @@ begin
     Node := VST_Main.GetNextSibling( Node );
   end;
 
+end;
+
+procedure TMainForm.ClearDevice;
+begin
+  SetLength( SVD_Device.peripherals.peripheralArray, 0 );
+  SVD_Device.cpu := Default ( TSVD_CPU );
+  SVD_Device := Default ( TSVD_Device );
 end;
 
 procedure TMainForm.DecodeEnumeratedValues( Node: PVirtualNode; eumeratedValues: PSVD_EnumeratedValues );
@@ -1224,9 +1227,9 @@ begin
       eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ].enumeratedValues := eumeratedValues;
       DecodeEnumeratedValue( Node,
         Addr( eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ] ) );
-
-      TDynArrayClass< TSVD_EnumeratedValue >.Inc( eumeratedValues.enumeratedValueArray,
-        eumeratedValues.enumeratedValueCount, eumeratedValueCapacity );
+      if eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ].enumeratedValues <> nil then
+        TDynArrayClass< TSVD_EnumeratedValue >.Inc( eumeratedValues.enumeratedValueArray,
+          eumeratedValues.enumeratedValueCount, eumeratedValueCapacity );
     end;
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1246,8 +1249,9 @@ begin
     Data := VST_Main.GetNodeData( Node );
 
     if Data.name = 'derivedFrom' then
-      field.DerivedFrom := Data.value
-    else if Data.name = 'name' then
+    begin
+      field.DerivedFrom := Data.value;
+    end else if Data.name = 'name' then
       field.name := Data.value
     else if Data.name = 'description' then
       field.Description := Data.value
@@ -1265,28 +1269,23 @@ begin
     begin
       field.bitRange.bitRangeType := brOffsetWidth;
       field.bitRange.bitRangeOffsetWidth.bitOffset := Str2Int( Data.value )
-    end
-    else if Data.name = 'bitWidth' then
+    end else if Data.name = 'bitWidth' then
     begin
       field.bitRange.bitRangeType := brOffsetWidth;
       field.bitRange.bitRangeOffsetWidth.bitWidth := Str2Int( Data.value );
-    end
-    else if Data.name = 'lsb' then
+    end else if Data.name = 'lsb' then
     begin
       field.bitRange.bitRangeType := brLsbMsb;
       field.bitRange.bitRangeLsbMsb.lsb := Str2Int( Data.value )
-    end
-    else if Data.name = 'msb' then
+    end else if Data.name = 'msb' then
     begin
       field.bitRange.bitRangeType := brLsbMsb;
       field.bitRange.bitRangeLsbMsb.msb := Str2Int( Data.value )
-    end
-    else if Data.name = 'bitRange' then
+    end else if Data.name = 'bitRange' then
     begin
       field.bitRange.bitRangeType := brString;
       field.bitRange.bitRangeString := Data.value;
-    end
-    else if Data.name = 'enumeratedValues' then
+    end else if Data.name = 'enumeratedValues' then
     begin
       field.enumeratedValues.field := field;
       DecodeEnumeratedValues( Node, Addr( field.enumeratedValues ) );
@@ -1314,7 +1313,8 @@ begin
     begin
       fields.fieldArray[ fields.fieldCount ].fields := fields;
       DecodeField( Node, Addr( fields.fieldArray[ fields.fieldCount ] ) );
-      TDynArrayClass< TSVD_Field >.Inc( fields.fieldArray, fields.fieldCount, fieldCapacity );
+      if fields.fieldArray[ fields.fieldCount ].fields <> nil then
+        TDynArrayClass< TSVD_Field >.Inc( fields.fieldArray, fields.fieldCount, fieldCapacity );
     end;
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1333,8 +1333,9 @@ begin
   begin
     Data := VST_Main.GetNodeData( Node );
     if Data.name = 'derivedFrom' then
-      _register.DerivedFrom := Data.value
-    else if Data.name = 'name' then
+    begin
+      _register.DerivedFrom := Data.value;
+    end else if Data.name = 'name' then
       _register.name := Data.value
     else if Data.name = 'displayName' then
       _register.displayName := Data.value
@@ -1397,8 +1398,9 @@ begin
   begin
     Data := VST_Main.GetNodeData( Node );
     if Data.name = 'derivedFrom' then
-      cluster.DerivedFrom := Data.value
-    else if Data.name = 'name' then
+    begin
+      cluster.DerivedFrom := Data.value;
+    end else if Data.name = 'name' then
       cluster.name := Data.value
     else if Data.name = 'displayName' then
       cluster.displayName := Data.value
@@ -1435,8 +1437,7 @@ begin
       cluster.registerArray[ cluster.registerCount ].cluster := cluster;
       DecodeRegister( Node, Addr( cluster.registerArray[ cluster.registerCount ] ) );
       TDynArrayClass< TSVD_Register >.Inc( cluster.registerArray, cluster.registerCount, registerCapacity );
-    end
-    else if Data.name = 'cluster' then
+    end else if Data.name = 'cluster' then
     begin
       cluster.clusterArray[ cluster.clusterCount ].registers := nil;
       cluster.clusterArray[ cluster.clusterCount ].cluster := cluster;
@@ -1473,8 +1474,7 @@ begin
       registers.registerArray[ registers.registerCount ].cluster := nil;
       DecodeRegister( Node, Addr( registers.registerArray[ registers.registerCount ] ) );
       TDynArrayClass< TSVD_Register >.Inc( registers.registerArray, registers.registerCount, registerCapacity );
-    end
-    else if Data.name = 'cluster' then
+    end else if Data.name = 'cluster' then
     begin
       registers.clusterArray[ registers.clusterCount ].registers := registers;
       registers.clusterArray[ registers.clusterCount ].cluster := nil;
@@ -1529,7 +1529,9 @@ end;
 
 procedure TMainForm.DecodePeripheral( Node: PVirtualNode; peripheral: PSVD_Peripheral );
 var
+  I: Integer;
   Data: PVST_MainData;
+  derivedFromFound: Boolean;
   addressBlockCapacity: Cardinal;
 begin
   addressBlockCapacity := 8;
@@ -1540,8 +1542,31 @@ begin
   begin
     Data := VST_Main.GetNodeData( Node );
     if Data.name = 'derivedFrom' then
-      peripheral.DerivedFrom := Data.value
-    else if Data.name = 'name' then
+    begin
+      derivedFromFound := False;
+      for I := 0 to peripheral.peripherals.peripheralCount - 1 do // Exclude Self
+      begin
+        if peripheral.peripherals.peripheralArray[ I ].peripherals = nil then // Invalid peripheral
+          Continue;
+
+        if Data.value = peripheral.peripherals.peripheralArray[ I ].name then // Parent Found
+        begin
+          derivedFromFound := True;
+          // Values are inherit from derivedFrom Peripheral
+          // MemCpy( peripheral, peripheral.peripherals.peripheralArray[ I ], sizeof( TSVD_Peripheral ) )
+          peripheral^ := peripheral.peripherals.peripheralArray[ I ];
+          peripheral.DerivedFrom := Data.value;
+          break;
+        end;
+      end;
+
+      if not derivedFromFound then
+      begin
+        peripheral.peripherals := nil; // Mark this peripheral as Invalid
+        Exit;
+      end;
+      // Elements specified underneath will override inherited values.
+    end else if Data.name = 'name' then
       peripheral.name := Data.value
     else if Data.name = 'version' then
       peripheral.version := Data.value
@@ -1583,8 +1608,7 @@ begin
       DecodeAddressBlock( Node, Addr( peripheral.addressBlockArray[ peripheral.addressBlockCount ] ) );
       TDynArrayClass< TSVD_AddressBlock >.Inc( peripheral.addressBlockArray, peripheral.addressBlockCount,
         addressBlockCapacity );
-    end
-    else if Data.name = 'registers' then
+    end else if Data.name = 'registers' then
     begin
       peripheral.registers.peripheral := peripheral;
       DecodeRegisters( Node, Addr( peripheral.registers ) );
@@ -1612,8 +1636,15 @@ begin
     begin
       peripherals.peripheralArray[ peripherals.peripheralCount ].peripherals := peripherals;
       DecodePeripheral( Node, Addr( peripherals.peripheralArray[ peripherals.peripheralCount ] ) );
-      TDynArrayClass< TSVD_Peripheral >.Inc( peripherals.peripheralArray, peripherals.peripheralCount,
-        peripheralCapacity );
+      if peripherals.peripheralArray[ peripherals.peripheralCount ].peripherals <> nil then
+      begin
+        // peripherals.peripheralArray[ peripherals.peripheralCount ].derivedFrom <> nil
+        // and derivedFrom is Found, Add current peripheral to peripheralArray, Update peripheralCount
+        TDynArrayClass< TSVD_Peripheral >.Inc( peripherals.peripheralArray, peripherals.peripheralCount,
+          peripheralCapacity );
+      end else begin
+        // Ignore this peripheral, peripheralCount is not updated
+      end;
     end;
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1666,12 +1697,48 @@ begin
   end;
 end;
 
+procedure TMainForm.DecodeDevice0( );
+var
+  Data: PVST_MainData;
+  peripheralCapacity: Cardinal;
+  I: Integer;
+  J: Integer;
+  K: Integer;
+  L: Integer;
+begin
+  ClearDevice( );
+
+  peripheralCapacity := 4;
+  SetLength( SVD_Device.peripherals.peripheralArray, peripheralCapacity );
+  for I := 0 to 3 do
+  begin
+    SVD_Device.peripherals.peripheralArray[ I ].name := 'Peripheral';
+    SetLength( SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray, 4 );
+    for J := 0 to 3 do
+    begin
+      SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].name := 'Register';
+      SetLength( SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray, 4 );
+      for K := 0 to 3 do
+      begin
+        SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray[ K ].name := 'Field';
+        SetLength( SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray[ K ]
+          .enumeratedValues.enumeratedValueArray, 4 );
+        for L := 0 to 3 do
+        begin
+          SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray[ K ]
+            .enumeratedValues.enumeratedValueArray[ L ].name := 'enumeratedValue';
+        end;
+      end;
+    end;
+  end;
+end;
+
 procedure TMainForm.DecodeDevice( );
 var
   Data: PVST_MainData;
   Node: PVirtualNode;
 begin
-  FillChar( SVD_Device, 0, Sizeof( SVD_Device ) );
+  ClearDevice( );
 
   Node := VST_Main.GetFirstChild( nil );
   while Assigned( Node ) do
@@ -1716,7 +1783,7 @@ begin
 
         else if Data.name = 'peripherals' then
         begin
-          SVD_Device.peripherals.device := Addr( SVD_Device );
+          SVD_Device.peripherals.Device := Addr( SVD_Device );
           DecodePeripherals( Node, Addr( SVD_Device.peripherals ) );
         end;
 
@@ -1733,10 +1800,20 @@ end;
 procedure TMainForm.btnMakeScriptClick( Sender: TObject );
 var
   I: Integer;
+  StringList: TStringList;
 begin
   if not SVD_DeviceDecoded then
     Exit;
 
+  MemoIDC.Lines.Clear;
+  StringList := TStringList.Create;
+  try
+    IDC_Decode( SVD_Device, StringList );
+    MemoIDC.Lines.AddStrings( StringList );
+
+  finally
+    StringList.free;
+  end;
 end;
 
 end.

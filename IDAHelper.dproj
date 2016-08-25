@@ -128,7 +128,6 @@
             <Form>AboutBox</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="Common\Misc\uMisc.pas"/>
         <DCCReference Include="Common\NativeXML\NativeXml.pas"/>
         <DCCReference Include="Common\NativeXML\NativeXmlC14n.pas"/>
         <DCCReference Include="Common\NativeXML\NativeXmlCodepages.pas"/>
@@ -140,6 +139,7 @@
         <DCCReference Include="Common\NativeXML\sdStringTable.pas"/>
         <DCCReference Include="Source\uSVD_Type.pas"/>
         <DCCReference Include="Source\uIDC_Script.pas"/>
+        <DCCReference Include="Common\Misc\uMisc.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

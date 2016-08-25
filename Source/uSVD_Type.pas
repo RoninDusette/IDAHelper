@@ -2,10 +2,146 @@ unit uSVD_Type;
 
 interface
 
+{
+  dimElement : NAME[%s] -- Array of Elements, NAME_%s -- Multiple Elements
+  ----------------------------------------------------------------------------------------------------------------------
+  A powerfull construct in data structures of the C programming language is the array.
+  An array is a series of data elements of the same type selected via an index.
+  CMSIS-SVD supports arrays of <peripherals>, <cluster> and <register>.
+
+  derivedFrom : Multiple Instantiation
+  ----------------------------------------------------------------------------------------------------------------------
+  CMSIS-SVD supports the reuse of whole sections of the description.
+  The attribute derivedFrom for the
+  *  peripheral-, register-, and field-section
+  specifies the source of the section to be copied from.
+
+  Individual tags can be used to redefine specific elements within a copied section.
+
+  Hierarchies are separated by a dot. For example, <peripheralName>.<registerName>.<fieldName>
+  In case the name of the description source is not unique, the name needs to be qualified hierarchically
+  until the element composite name becomes unique.
+
+  Descriptions
+  ----------------------------------------------------------------------------------------------------------------------
+  ** On each level **, the tag description provides verbose information about the respective element.
+  The description field plays an important part in improving the software development productivity
+  as it gives instant access to information that otherwise would need to be looked up in the device documentation.
+
+  Constants
+  ----------------------------------------------------------------------------------------------------------------------
+  Number constants shall be entered in hexadecimal, decimal, or binary format.
+  ** The Hexadecimal format is indicated by a leading "0x".
+  ** The Binary format is indicated by a leading "#".
+  ** All other formats are interpreted as decimal numbers.
+
+  The value tag in enumeratedValue accepts 'do not care' bits represented by "x".
+
+  Device Level
+  ----------------------------------------------------------------------------------------------------------------------
+  A device contains one or more peripherals.
+
+  **** registerPropertiesGroup ****
+  Optional elements like ** size, access, resetValue, and resetMask ** defined on this level are used
+  as default values throughout the device description,  unless they get redefined at a lower level.
+
+
+  Peripherals Level
+  ----------------------------------------------------------------------------------------------------------------------
+  derivedFrom	: Specifies the name of the register from which to inherit the data.
+  *             Elements being specified underneath will override the inherited values.
+  baseAddress : An address block and register addresses are specified relative to the base address of a peripheral.
+  offset : addressBlock, register
+
+  Starting version 1.3 of the SVD specification arrays of peripherals can be specified.
+  The single peripheral description gets duplicated automatically into an array.
+
+  The peripheral name needs to be of the format myPeripheral[%s].
+  The <dim> specifies the number of array elements.
+  The <dimIncrement> specifies the address offset between two peripherals : sizeof(peripheral)
+  The <dimIndex> is ignored.
+  <dim> * <dimIncrement> = sizeof(peripheral[0..dim-1])
+
+  If you want to create copies of a peripheral using different names, please use the derivedFrom attribute.
+
+  alternatePeripheral : USB_OTG_DEVICE, USB_OTG_HOST : the same address blocks ( may be not same registers layout )
+  All address blocks in the memory space of a device are assigned to a unique peripheral by default.
+  If there are multiple peripherals describing the same address blocks, this needs to be specified explicitly.
+  A peripheral redefining an address block needs to specify the name of the peripheral that is listed first in the description.
+  If no alternate peripheral is specified, then the SVDConv utility will generate errors.
+
+  Registers Level
+  ----------------------------------------------------------------------------------------------------------------------
+  derivedFrom : The field is cloned from a previously defined field with a unique name.
+  *             When deriving a register, it is mandatory to specify the name, the description, and the addressOffset.
+  *
+  The register's *name*, *detailed description*, and the *address-offset* relative to the peripheral base address
+  are the ****mandatory**** elements.
+
+  If the *size*, *access*, *reset value*, and *reset mask* have not been specified on the device or peripheral level,
+  or if the default values need to be redefined locally, these fields become ****mandatory****.
+
+  A register can represent a single value or can be subdivided into individual bit-fields of specific functionality.
+  In schema-terms the *fields* section is ****optional****.
+
+  alternateRegister :
+  A register could be a redefinition of an already described address.
+  In the case, the register can be either marked alternateRegister and needs to have a unique name.
+
+  The single register description gets duplicated automatically into an array.
+  The <dim> specifies the number of array elements.
+  The <dimIncrement> specifies the address offset between two registers.
+  The <dimIndex> specific the register names.
+  NAME[%s] -- Array of Elements : The <dimIndex> is ignored.
+  NAME_%s --- Multiple Elements : The <dimIndex> : %s = A,B,C,D : %s = 0-3 : %s = A,C,E
+  By default, the index is a decimal value starting with 0 for the first register.
+
+  Cluster Level : an optional sub-level within the CMSIS SVD registers level
+  ----------------------------------------------------------------------------------------------------------------------
+  derivedFrom : Specifies the name of the cluster from which to inherit the data.
+  Elements being specified underneath will override the inherited values.
+  When deriving a cluster, it is mandatory to specify at least the **name, the description, and the addressOffset**.
+  The <dim> specifies the number of elements in an array of clusters
+  The <dimIncrement> specifies the address offset between two neighboring clusters
+  The <dimIndex> specific the register names.
+
+  A cluster specifies the addressOffset relative to the baseAddress of the peripheral.
+  All register elements within a cluster specify their addressOffset
+  relative to the cluster base address (peripheral:baseAddress + cluster:addressOffset).
+  register address = peripheral:baseAddress + cluster:addressOffset + register:addressOffset
+
+  Since version 1.3 of the specification the nesting of <cluster> elements is supported.
+  This means, that within a <cluster> section any number of <register> and <cluster> sections may occur.
+
+  register address = p:baseAddress + c:addressOffset + c:addressOffset + register:addressOffset
+
+  Fields Level
+  ----------------------------------------------------------------------------------------------------------------------
+  derivedFrom	: The field is cloned from a previously defined field with a unique name.
+  name : A bit-field has a name that is unique within the register.
+  enumeratedValues : A field may define an enumeratedValues in order to make the display more intuitive to read.
+
+  Enumerated Values Level
+  ----------------------------------------------------------------------------------------------------------------------
+  derivedFrom : Makes a copy from a previously defined enumeratedValues section. No modifications are allowed.
+
+  dimElementGroup
+  ----------------------------------------------------------------------------------------------------------------------
+  The size of the array is specified by the <dim> element.
+  The register names can be composed by the register name and an index-specific substring defined in <dimIndex>.
+  The <dimIncrement> specifies the address offset between two registers.
+
+  registerPropertiesGroup
+  ----------------------------------------------------------------------------------------------------------------------
+  Register properties can be set on device, peripheral, and register level.
+  Element values defined on a lower level overwrite element values defined on a more general level.
+
+}
+
 uses
   Winapi.Windows, Winapi.Messages, // Windows
   System.Classes, System.Variants, System.SysUtils, // System
-  uMisc;
+  uMisc, Generics.Collections, Generics.Defaults;
 
 type
   // -----------------------------------------------------------------------------------------------
@@ -29,6 +165,8 @@ type
     { Value defining the bit position of the most significant bit within the register it belongs to. }
     msb: Cardinal; // ---------- 31
   end;
+
+  PSVD_BitRange = ^TSVD_BitRange;
 
   TSVD_BitRange = record
     bitRangeType: TSVD_BitRangeType;
@@ -304,15 +442,9 @@ type
 
   TSVD_Peripheral = record
     peripherals: PSVD_Peripherals;
-
-    derivedFrom: String;
-
-    { 1.3: specify uni-dimensional array of peripheral - requires name="<name>[%s]" }
-    dimElement: TSVD_dimElement;
-
     { name specifies the name of a peripheral. This name is used for the System View and device header file }
     name: String;
-
+    derivedFrom: String;
     version: String;
 
     { description provides a high level functional description of the peripheral }
@@ -328,6 +460,10 @@ type
     { appendToName is a postfix that is appended to each register name of this peripheral. The device header
       file will sho the registers in a C-Struct of the peripheral without the postfix }
     appendToName: String;
+
+    { 1.3: specify uni-dimensional array of peripheral - requires name="<name>[%s]" }
+    dimElement: TSVD_dimElement;
+
     { baseAddress specifies the absolute base address of a peripheral. For derived peripherals it is mandatory
       to specify a baseAddress. }
     baseAddress: Cardinal;

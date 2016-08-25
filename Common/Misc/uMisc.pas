@@ -166,8 +166,7 @@ begin
       HasSpace := True;
       Inc( j );
       Result[ j ] := s[ i ];
-    end
-    else if ( Ord( s[ i ] ) > $20 ) and ( Ord( s[ i ] ) < $7F ) then
+    end else if ( Ord( s[ i ] ) > $20 ) and ( Ord( s[ i ] ) < $7F ) then
     begin
       HasSpace := False;
       Inc( j );
@@ -335,7 +334,8 @@ end;
 class procedure TDynArrayClass< T >.Inc( var DynArray: TDynArrayType< T >; var Count: Cardinal;
   var Capacity: Cardinal );
 var
-  Delta: integer;
+  Delta: Cardinal;
+  i: Cardinal;
 begin
   Count := Count + 1;
 
@@ -351,7 +351,13 @@ begin
   Capacity := Capacity + Delta;
 
   if Delta > 0 then
+  begin
     SetLength( DynArray, Capacity );
+    for i := 1 to Delta do
+    begin
+      FillChar( DynArray[ Capacity - i ], SizeOf( T ), 0 );
+    end;
+  end;
 end;
 
 procedure DynArrayFoo;
@@ -367,7 +373,7 @@ begin
   SetLength( Foo, Capacity );
 
   for i := 0 to 512 do
-    TDynArrayClass< integer >.Inc( Foo, Count, Capacity );       // 255, 256, 285  : 512, 513, 556
+    TDynArrayClass< integer >.Inc( Foo, Count, Capacity ); // 255, 256, 285  : 512, 513, 556
 
   SetLength( Foo, Count );
 end;
