@@ -319,7 +319,7 @@ type
     usage: String;
 
     enumeratedValueCount: Cardinal;
-    enumeratedValueArray: TDynArrayType< TSVD_EnumeratedValue >;
+    enumeratedValueArray: TArray< TSVD_EnumeratedValue >;
   end;
 
   { A bit-field has a name that is unique within the register.
@@ -353,7 +353,7 @@ type
 
     name: String;
     fieldCount: Cardinal;
-    fieldArray: TDynArrayType< TSVD_Field >;
+    fieldArray: TArray< TSVD_Field >;
   end;
 
   TSVD_Register = record
@@ -423,10 +423,10 @@ type
 
     { 1.3: nesting of cluster is supported }
     clusterCount: Cardinal;
-    clusterArray: TDynArrayType< TSVD_Cluster >;
+    clusterArray: TArray< TSVD_Cluster >;
 
     registerCount: Cardinal;
-    registerArray: TDynArrayType< TSVD_Register >;
+    registerArray: TArray< TSVD_Register >;
   end;
 
   { the registers section can have an arbitrary list of cluster and register sections }
@@ -434,10 +434,10 @@ type
     peripheral: PSVD_Peripheral;
 
     clusterCount: Cardinal;
-    clusterArray: TDynArrayType< TSVD_Cluster >;
+    clusterArray: TArray< TSVD_Cluster >;
 
     registerCount: Cardinal;
-    registerArray: TDynArrayType< TSVD_Register >;
+    registerArray: TArray< TSVD_Register >;
   end;
 
   TSVD_Peripheral = record
@@ -476,7 +476,7 @@ type
       derived peripherals may have no addressBlock, however none-derived peripherals are required to specify
       at least one address block }
     addressBlockCount: Cardinal;
-    addressBlockArray: TDynArrayType< TSVD_AddressBlock >;
+    addressBlockArray: TArray< TSVD_AddressBlock >;
 
     { interrupt specifies can specify one or more interrtupts by name, description and value }
     interrupt: TSVD_Interrupt;
@@ -490,7 +490,7 @@ type
   TSVD_Peripherals = record
     device: PSVD_Device;
     peripheralCount: Cardinal;
-    peripheralArray: TDynArrayType< TSVD_Peripheral >;
+    peripheralArray: TArray< TSVD_Peripheral >;
   end;
 
   TSVD_Device = record
@@ -531,6 +531,39 @@ type
     cpu: TSVD_CPU;
 
     peripherals: TSVD_Peripherals;
+  end;
+
+  TSVD_PairPeripheral = record
+    name: string;
+    peripheral: PSVD_Peripheral;
+  end;
+
+  TSVD_PairRegister = record
+    name: string;
+    _register: PSVD_Register;
+  end;
+
+  TSVD_PairCluster = record
+    name: string;
+    cluster: PSVD_Cluster;
+  end;
+
+  TSVD_PairField = record
+    name: string;
+    field: PSVD_Field;
+  end;
+
+  TSVD_PairEnumeratedValues = record
+    name: string;
+    enumeratedValues: PSVD_EnumeratedValues;
+  end;
+
+  TSVD_PairName = record
+    PairPeripheral: TArray< TSVD_PairPeripheral >;
+    PairRegister: TArray< TSVD_PairRegister >;
+    PairCluster: TArray< TSVD_PairCluster >;
+    PairField: TArray< TSVD_PairField >;
+    PairEnumeratedValues: TArray< TSVD_PairEnumeratedValues >;
   end;
 
 function Str2Int( const S: String ): Cardinal;

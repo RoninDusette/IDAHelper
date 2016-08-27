@@ -15,7 +15,8 @@ uses
   sdStringTable in 'Common\NativeXML\sdStringTable.pas',
   uSVD_Type in 'Source\uSVD_Type.pas',
   uIDC_Script in 'Source\uIDC_Script.pas',
-  uMisc in 'Common\Misc\uMisc.pas';
+  uMisc in 'Common\Misc\uMisc.pas',
+  uDynArray in 'Common\Misc\uDynArray.pas';
 
 {$R *.res}
 

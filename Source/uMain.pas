@@ -235,7 +235,7 @@ var
 
   SVDErrorWarningLineArrayIndex: Cardinal;
   SVDErrorWarningLineArrayCount: Cardinal;
-  SVDErrorWarningLineArray: TDynArrayType< TSVDErrorWarningLine >;
+  SVDErrorWarningLineArray: TArray< TSVDErrorWarningLine >;
   // First, Last, Prev, Next : LineNumber := SVDErrorWarningLineArray[SVDErrorWarningLineArrayIndex]
 
   XmlDoc: TNativeXml;
@@ -469,7 +469,7 @@ begin
       SVDErrorWarningLineArray[ LineArryIndex ].SVDFileLine := GetLineNumber( I );
 
       if True then
-        TDynArrayClass< TSVDErrorWarningLine >.Inc( SVDErrorWarningLineArray, LineArryIndex, LineArryCapacity )
+        TArrayHelper< TSVDErrorWarningLine >.Increment( SVDErrorWarningLineArray, LineArryIndex, LineArryCapacity )
       else
       begin
         Inc( LineArryIndex );
@@ -489,7 +489,7 @@ begin
       SVDErrorWarningLineArray[ LineArryIndex ].SVDLogLine := I;
       SVDErrorWarningLineArray[ LineArryIndex ].SVDFileLine := GetLineNumber( I );
 
-      TDynArrayClass< TSVDErrorWarningLine >.Inc( SVDErrorWarningLineArray, LineArryIndex, LineArryCapacity );
+      TArrayHelper< TSVDErrorWarningLine >.Increment( SVDErrorWarningLineArray, LineArryIndex, LineArryCapacity );
     end;
 
     if Pos( SVDFileInfoStr, MemoSVDLog.Lines[ I ] ) > 0 then
@@ -930,7 +930,7 @@ var
   BNode: PVirtualNode;
   CNode: PVirtualNode;
 
-  SVD_Peripherals: TDynArrayType< TVST_PeriphInfo >;
+  SVD_Peripherals: TArray< TVST_PeriphInfo >;
   SVD_PerphCount: Cardinal;
   SVD_PerphCapacity: Cardinal;
 begin
@@ -1032,7 +1032,7 @@ begin
       // Add Seg to Array to query late
       SVD_Peripherals[ SVD_PerphCount ].name := PeriphData.name;
       SVD_Peripherals[ SVD_PerphCount ].Node := CNode;
-      TDynArrayClass< TVST_PeriphInfo >.Inc( SVD_Peripherals, SVD_PerphCount, SVD_PerphCapacity );
+      TArrayHelper< TVST_PeriphInfo >.Increment( SVD_Peripherals, SVD_PerphCount, SVD_PerphCapacity );
 
       if PeriphData.DerivedFrom <> '' then
       begin
@@ -1228,7 +1228,7 @@ begin
       DecodeEnumeratedValue( Node,
         Addr( eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ] ) );
       if eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ].enumeratedValues <> nil then
-        TDynArrayClass< TSVD_EnumeratedValue >.Inc( eumeratedValues.enumeratedValueArray,
+        TArrayHelper< TSVD_EnumeratedValue >.Increment( eumeratedValues.enumeratedValueArray,
           eumeratedValues.enumeratedValueCount, eumeratedValueCapacity );
     end;
 
@@ -1314,7 +1314,7 @@ begin
       fields.fieldArray[ fields.fieldCount ].fields := fields;
       DecodeField( Node, Addr( fields.fieldArray[ fields.fieldCount ] ) );
       if fields.fieldArray[ fields.fieldCount ].fields <> nil then
-        TDynArrayClass< TSVD_Field >.Inc( fields.fieldArray, fields.fieldCount, fieldCapacity );
+        TArrayHelper< TSVD_Field >.Increment( fields.fieldArray, fields.fieldCount, fieldCapacity );
     end;
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1383,9 +1383,11 @@ end;
 
 procedure TMainForm.DecodeCluster( Node: PVirtualNode; cluster: PSVD_Cluster );
 var
+  I: Integer;
   Data: PVST_MainData;
   registerCapacity: Cardinal;
   clusterCapacity: Cardinal;
+  derivedFromFound: Boolean;
 begin
   registerCapacity := 128;
   SetLength( cluster.registerArray, registerCapacity );
@@ -1399,7 +1401,44 @@ begin
     Data := VST_Main.GetNodeData( Node );
     if Data.name = 'derivedFrom' then
     begin
-      cluster.DerivedFrom := Data.value;
+      derivedFromFound := False;
+      if cluster.registers <> nil then // cluster in regiters
+      begin
+        for I := 0 to cluster.registers.clusterCount - 1 do // Exclude Self
+        begin
+
+        end;
+
+      end else if cluster.cluster <> nil then
+      begin // cluster in cluster
+
+      end;
+
+      for I := 0 to cluster.registers.clusterCount - 1 do // Exclude Self
+      begin
+        if cluster.cluster.clusterArray[ I ].registers = nil then // Invalid cluster
+          Continue;
+
+        if cluster.cluster.clusterArray[ I ].cluster = nil then // Invalid cluster
+          Continue;
+
+        if Data.value = cluster.cluster.clusterArray[ I ].name then // Parent Found
+        begin
+          derivedFromFound := True;
+          // Values are inherit from derivedFrom Peripheral
+          // MemCpy( peripheral, peripheral.peripherals.peripheralArray[ I ], sizeof( TSVD_Peripheral ) )
+          cluster^ := cluster.cluster.clusterArray[ I ];
+          cluster.DerivedFrom := Data.value;
+          break;
+        end;
+      end;
+
+      if not derivedFromFound then
+      begin
+        cluster.cluster := nil; // Mark this peripheral as Invalid
+        Exit;
+      end
+      // Elements specified underneath will override inherited values.
     end else if Data.name = 'name' then
       cluster.name := Data.value
     else if Data.name = 'displayName' then
@@ -1436,13 +1475,13 @@ begin
       cluster.registerArray[ cluster.registerCount ].registers := nil;
       cluster.registerArray[ cluster.registerCount ].cluster := cluster;
       DecodeRegister( Node, Addr( cluster.registerArray[ cluster.registerCount ] ) );
-      TDynArrayClass< TSVD_Register >.Inc( cluster.registerArray, cluster.registerCount, registerCapacity );
+      TArrayHelper< TSVD_Register >.Increment( cluster.registerArray, cluster.registerCount, registerCapacity );
     end else if Data.name = 'cluster' then
     begin
       cluster.clusterArray[ cluster.clusterCount ].registers := nil;
       cluster.clusterArray[ cluster.clusterCount ].cluster := cluster;
       DecodeCluster( Node, Addr( cluster.clusterArray[ cluster.clusterCount ] ) );
-      TDynArrayClass< TSVD_Cluster >.Inc( cluster.clusterArray, cluster.clusterCount, clusterCapacity );
+      TArrayHelper< TSVD_Cluster >.Increment( cluster.clusterArray, cluster.clusterCount, clusterCapacity );
     end;
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1473,14 +1512,14 @@ begin
       registers.registerArray[ registers.registerCount ].registers := registers;
       registers.registerArray[ registers.registerCount ].cluster := nil;
       DecodeRegister( Node, Addr( registers.registerArray[ registers.registerCount ] ) );
-      TDynArrayClass< TSVD_Register >.Inc( registers.registerArray, registers.registerCount, registerCapacity );
+      TArrayHelper< TSVD_Register >.Increment( registers.registerArray, registers.registerCount, registerCapacity );
     end else if Data.name = 'cluster' then
     begin
       registers.clusterArray[ registers.clusterCount ].registers := registers;
       registers.clusterArray[ registers.clusterCount ].cluster := nil;
 
       DecodeCluster( Node, Addr( registers.clusterArray[ registers.clusterCount ] ) );
-      TDynArrayClass< TSVD_Cluster >.Inc( registers.clusterArray, registers.clusterCount, clusterCapacity );
+      TArrayHelper< TSVD_Cluster >.Increment( registers.clusterArray, registers.clusterCount, clusterCapacity );
     end;
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1606,7 +1645,7 @@ begin
     else if Data.name = 'addressBlock' then
     begin
       DecodeAddressBlock( Node, Addr( peripheral.addressBlockArray[ peripheral.addressBlockCount ] ) );
-      TDynArrayClass< TSVD_AddressBlock >.Inc( peripheral.addressBlockArray, peripheral.addressBlockCount,
+      TArrayHelper< TSVD_AddressBlock >.Increment( peripheral.addressBlockArray, peripheral.addressBlockCount,
         addressBlockCapacity );
     end else if Data.name = 'registers' then
     begin
@@ -1636,11 +1675,12 @@ begin
     begin
       peripherals.peripheralArray[ peripherals.peripheralCount ].peripherals := peripherals;
       DecodePeripheral( Node, Addr( peripherals.peripheralArray[ peripherals.peripheralCount ] ) );
+
       if peripherals.peripheralArray[ peripherals.peripheralCount ].peripherals <> nil then
       begin
         // peripherals.peripheralArray[ peripherals.peripheralCount ].derivedFrom <> nil
         // and derivedFrom is Found, Add current peripheral to peripheralArray, Update peripheralCount
-        TDynArrayClass< TSVD_Peripheral >.Inc( peripherals.peripheralArray, peripherals.peripheralCount,
+        TArrayHelper< TSVD_Peripheral >.Increment( peripherals.peripheralArray, peripherals.peripheralCount,
           peripheralCapacity );
       end else begin
         // Ignore this peripheral, peripheralCount is not updated

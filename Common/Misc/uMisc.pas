@@ -3,21 +3,21 @@ unit uMisc;
 interface
 
 uses
-  Winapi.Windows, System.SysUtils, System.Classes, System.Character, Winapi.Messages, Variants, Forms,
-  Generics.Collections, Generics.Defaults;
+  Winapi.Windows, Winapi.Messages,
+  System.SysUtils, System.Classes, System.Character, System.Variants,
+  Generics.Collections, Generics.Defaults,
+  VCL.Forms;
 
 type
   TArg< T > = reference to procedure( const Arg: T );
 
 type
-  TDynArrayType< T > = array of T;
-
-  TDynArrayClass< T > = class
-  public
-    class procedure Inc( var DynArray: TDynArrayType< T >; var Count: Cardinal; var Capacity: Cardinal );
+  TArrayHelper< T > = class
+    class procedure Increment( var DynArray: TArray< T >; var Count: Cardinal; var Capacity: Cardinal );
+    class procedure Append( var DynArray: TArray< T >; Value: T; var Count: Cardinal; var Capacity: Cardinal );
   end;
 
-procedure DynArrayFoo;
+procedure DynArrayClassFoo;
 
 // Generate Temp FileName uses Windows API GetTempFileName()
 function GenerateTempFileName( const Extension: String ): String;
@@ -32,7 +32,7 @@ function RemoveWhiteSpace( const s: String ): String;
 procedure CopyFile( SourceFileName, DestFileName: string );
 
 // Capture all to Aoutput
-function ExecAndCapture( const ACommand, AParameters: String; var AOutput: AnsiString ): integer;
+function ExecAndCapture( const ACommand, AParameters: String; var AOutput: AnsiString ): Integer;
 
 // Capture Every Line
 procedure ExecAndCaptureReal( const ACommand, AParameters: String; CallBack: TArg< PAnsiChar > );
@@ -151,7 +151,7 @@ end;
 
 function RemoveWhiteSpace( const s: String ): String;
 var
-  i, j: integer;
+  i, j: Integer;
   HasSpace: Boolean;
 begin
   SetLength( Result, Length( s ) );
@@ -232,7 +232,7 @@ begin
     end;
 end;
 
-function ExecAndCapture( const ACommand, AParameters: String; var AOutput: AnsiString ): integer;
+function ExecAndCapture( const ACommand, AParameters: String; var AOutput: AnsiString ): Integer;
 type
   TAnoPipe = record
     Input: THandle;
@@ -329,13 +329,37 @@ begin
   end;
 end;
 
-{ TDynArrayClass<T> }
+{ TArrayHelper<T> }
 
-class procedure TDynArrayClass< T >.Inc( var DynArray: TDynArrayType< T >; var Count: Cardinal;
-  var Capacity: Cardinal );
+class procedure TArrayHelper< T >.Append( var DynArray: TArray< T >; Value: T; var Count, Capacity: Cardinal );
 var
   Delta: Cardinal;
+begin
+
+  if Count < Capacity - 1 then
+    Delta := 0
+  else if Capacity > 64 then
+    Delta := Capacity div 4
+  else if Capacity > 8 then
+    Delta := 16
+  else
+    Delta := 4;
+
+  Capacity := Capacity + Delta;
+
+  if Delta > 0 then
+  begin
+    SetLength( DynArray, Capacity );
+  end;
+
+  DynArray[ Count ] := Value;
+  Count := Count + 1;
+end;
+
+class procedure TArrayHelper< T >.Increment( var DynArray: TArray< T >; var Count: Cardinal; var Capacity: Cardinal );
+var
   i: Cardinal;
+  Delta: Cardinal;
 begin
   Count := Count + 1;
 
@@ -353,29 +377,32 @@ begin
   if Delta > 0 then
   begin
     SetLength( DynArray, Capacity );
-    for i := 1 to Delta do
+    if False then
     begin
-      FillChar( DynArray[ Capacity - i ], SizeOf( T ), 0 );
+      for i := 1 to Delta do
+      begin
+        FillChar( DynArray[ Capacity - i ], SizeOf( T ), 0 );
+      end;
     end;
   end;
 end;
 
-procedure DynArrayFoo;
+procedure DynArrayClassFoo;
 var
-  Foo: TDynArrayType< integer >;
+  foo: TArray< Integer >;
   Count: Cardinal;
   Capacity: Cardinal;
-  i: integer;
+  i: Integer;
 begin
   Count := 0;
   Capacity := 4;
 
-  SetLength( Foo, Capacity );
+  SetLength( foo, Capacity );
 
   for i := 0 to 512 do
-    TDynArrayClass< integer >.Inc( Foo, Count, Capacity ); // 255, 256, 285  : 512, 513, 556
+    TArrayHelper< Integer >.Increment( foo, Count, Capacity ); // 255, 256, 285  : 512, 513, 556
 
-  SetLength( Foo, Count );
+  SetLength( foo, Count );
 end;
 
 end.
