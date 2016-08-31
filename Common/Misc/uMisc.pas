@@ -11,14 +11,6 @@ uses
 type
   TArg< T > = reference to procedure( const Arg: T );
 
-type
-  TArrayHelper< T > = class
-    class procedure Increment( var DynArray: TArray< T >; var Count: Cardinal; var Capacity: Cardinal );
-    class procedure Append( var DynArray: TArray< T >; Value: T; var Count: Cardinal; var Capacity: Cardinal );
-  end;
-
-procedure DynArrayClassFoo;
-
 // Generate Temp FileName uses Windows API GetTempFileName()
 function GenerateTempFileName( const Extension: String ): String;
 
@@ -329,80 +321,5 @@ begin
   end;
 end;
 
-{ TArrayHelper<T> }
-
-class procedure TArrayHelper< T >.Append( var DynArray: TArray< T >; Value: T; var Count, Capacity: Cardinal );
-var
-  Delta: Cardinal;
-begin
-
-  if Count < Capacity - 1 then
-    Delta := 0
-  else if Capacity > 64 then
-    Delta := Capacity div 4
-  else if Capacity > 8 then
-    Delta := 16
-  else
-    Delta := 4;
-
-  Capacity := Capacity + Delta;
-
-  if Delta > 0 then
-  begin
-    SetLength( DynArray, Capacity );
-  end;
-
-  DynArray[ Count ] := Value;
-  Count := Count + 1;
-end;
-
-class procedure TArrayHelper< T >.Increment( var DynArray: TArray< T >; var Count: Cardinal; var Capacity: Cardinal );
-var
-  i: Cardinal;
-  Delta: Cardinal;
-begin
-  Count := Count + 1;
-
-  if Count < Capacity then
-    Delta := 0
-  else if Capacity > 64 then
-    Delta := Capacity div 4
-  else if Capacity > 8 then
-    Delta := 16
-  else
-    Delta := 4;
-
-  Capacity := Capacity + Delta;
-
-  if Delta > 0 then
-  begin
-    SetLength( DynArray, Capacity );
-    if False then
-    begin
-      for i := 1 to Delta do
-      begin
-        FillChar( DynArray[ Capacity - i ], SizeOf( T ), 0 );
-      end;
-    end;
-  end;
-end;
-
-procedure DynArrayClassFoo;
-var
-  foo: TArray< Integer >;
-  Count: Cardinal;
-  Capacity: Cardinal;
-  i: Integer;
-begin
-  Count := 0;
-  Capacity := 4;
-
-  SetLength( foo, Capacity );
-
-  for i := 0 to 512 do
-    TArrayHelper< Integer >.Increment( foo, Count, Capacity ); // 255, 256, 285  : 512, 513, 556
-
-  SetLength( foo, Count );
-end;
 
 end.

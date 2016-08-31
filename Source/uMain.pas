@@ -7,6 +7,7 @@ uses
   System.Classes, System.Variants, System.SysUtils, System.ImageList, // System
   Vcl.Forms, Vcl.Menus, Vcl.ImgList, Vcl.Graphics, Vcl.Dialogs, Vcl.ToolWin, // VCL
   Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, // VCL Controls
+  Generics.Collections, Generics.Defaults,
   NativeXml, sdDebug, VirtualTrees, uSVD_Type, uIDC_Script;
 
 type
@@ -42,15 +43,10 @@ type
     btnSaveScript: TToolButton;
     Panel4: TPanel;
     VST_Main: TVirtualStringTree;
-    Splitter3: TSplitter;
-    VST_Peripheral: TVirtualStringTree;
-    Splitter2: TSplitter;
-    VST_Interrupt: TVirtualStringTree;
     Splitter4: TSplitter;
     MemoIDC: TMemo;
     ToolButton21: TToolButton;
     btnGotoFirst: TToolButton;
-    DlgSave: TSaveDialog;
     btnExpandTree: TToolButton;
     btnCollapseTree: TToolButton;
     ToolButton1: TToolButton;
@@ -62,6 +58,7 @@ type
     Panel6: TPanel;
     Panel7: TPanel;
     RadioGroup1: TRadioGroup;
+    DlgSave: TSaveDialog;
     procedure FormCreate( Sender: TObject );
     procedure btnLoadSVDClick( Sender: TObject );
     procedure Exit1Click( Sender: TObject );
@@ -75,16 +72,8 @@ type
     procedure VST_MainGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
       TextType: TVSTTextType; var CellText: String );
     procedure VST_MainGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
-    procedure VST_PeripheralGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
-    procedure VST_InterruptGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
-    procedure VST_PeripheralGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
-      TextType: TVSTTextType; var CellText: String );
-    procedure VST_InterruptGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
-      TextType: TVSTTextType; var CellText: String );
     procedure FormDestroy( Sender: TObject );
     procedure VST_MainFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
-    procedure VST_PeripheralFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
-    procedure VST_InterruptFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
     procedure btnMakeScriptClick( Sender: TObject );
     procedure btnSaveScriptClick( Sender: TObject );
     procedure btnExpandTreeClick( Sender: TObject );
@@ -116,8 +105,6 @@ type
     //
     procedure CheckSVDFile;
 
-    function Decode_VST_Main: Boolean;
-
     //
     // Decode SVD
     //
@@ -130,21 +117,20 @@ type
     procedure ClearDevice;
 
     procedure DecodeDevice;
-    procedure DecodeDevice0;
-    procedure DecodePeripherals( Node: PVirtualNode; peripherals: PSVD_Peripherals );
-    procedure DecodePeripheral( Node: PVirtualNode; peripheral: PSVD_Peripheral );
+
+    function DecodePeripheral( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
     //
-    procedure DecodeRegisters( Node: PVirtualNode; registers: PSVD_Registers );
 
     // 1.3: nesting of cluster is supported
-    procedure DecodeCluster( Node: PVirtualNode; cluster: PSVD_Cluster );
-    procedure DecodeRegister( Node: PVirtualNode; _register: PSVD_Register );
+    function DecodeCluster( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
+    function DecodeRegister( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
     //
-    procedure DecodeFields( Node: PVirtualNode; fields: PSVD_Fields );
-    procedure DecodeField( Node: PVirtualNode; field: PSVD_Field );
-    procedure DecodeEnumeratedValues( Node: PVirtualNode; eumeratedValues: PSVD_EnumeratedValues );
+    function DecodeField( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
+
+    function DecodeEnumeratedValues( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
     procedure DecodeEnumeratedValue( Node: PVirtualNode; eumeratedValue: PSVD_EnumeratedValue );
 
+    function FindDerivedObject( FullName: String; ObjectType: TSVD_ObjectType ): PSVD_Object;
   public
     { Public declarations }
   end;
@@ -157,9 +143,11 @@ implementation
 {$R *.dfm}
 { $DEFINE XML_DEBUG }
 
-uses uAbout, uMisc;
+uses uAbout, uMisc, uDynArray;
 
 type
+  PSVDErrorWarningLine = ^TSVDErrorWarningLine;
+
   TSVDErrorWarningLine = record
     SVDFileLine: Integer;
     SVDLogLine: Integer;
@@ -169,8 +157,8 @@ type
   TXmlNodeInfo = record
     NodeType: TsdElementType;
     TypeName: String;
-    name: String;
-    value: String;
+    Name: Utf8String;
+    value: Utf8String;
     Depth: Integer;
   end;
 
@@ -182,29 +170,8 @@ type
 
   // Free name onFreeNode()
   TVST_MainData = record
-    name: String;
+    Name: String;
     value: String;
-  end;
-
-  PVST_PeriphData = ^TVST_PeriphData;
-
-  // Free name onFreeNode()
-  TVST_PeriphData = record
-    name: String;
-    Description: String;
-    BaseAddr: String;
-    Offset: String;
-    Size: String;
-    DerivedFrom: String;
-  end;
-
-  PVST_IrqData = ^TVST_IrqData;
-
-  // Free name onFreeNode()
-  TVST_IrqData = record
-    name: String;
-    Description: String;
-    Number: String;
   end;
 
 const
@@ -224,27 +191,26 @@ const
 
   XmlNodeTypeName: array [ xeElement .. xeError ] of String = //
     ( 'xeElement', 'xeAttribute', 'xeComment', 'xeCData', 'xeCondSection', 'xeDeclaration', 'xeStylesheet', 'xeDocType',
-    'xeDtdElement', 'xeDtdAttList', 'xeDtdEntity', 'xeDtdNotation', 'xeInstruction', 'xeCharData', 'xeWhiteSpace',
+    'xeDtdItem', 'xeDtdAttList', 'xeDtdEntity', 'xeDtdNotation', 'xeInstruction', 'xeCharData', 'xeWhiteSpace',
     'xeQuotedText', 'xeUnknown', 'xeEndTag', 'xeError' );
 
 var
   SVDFileName: String;
-  SVDInfoCount: Integer;
   SVDWarningCount: Integer;
   SVDErrorCount: Integer;
+  SVDInfoCount: Integer;
 
-  SVDErrorWarningLineArrayIndex: Cardinal;
-  SVDErrorWarningLineArrayCount: Cardinal;
-  SVDErrorWarningLineArray: TArray< TSVDErrorWarningLine >;
-  // First, Last, Prev, Next : LineNumber := SVDErrorWarningLineArray[SVDErrorWarningLineArrayIndex]
+  SVDErrorWarningLineArrayIndex: Integer;
+  SVDErrorWarningLineArray: TDynArray< TSVDErrorWarningLine >;
+  // First, Last, Prev, Next :
+  // LineNumber := SVDErrorWarningLineArray[SVDErrorWarningLineArrayIndex]
 
   XmlDoc: TNativeXml;
 
   ActiveNode: PVirtualNode;
   SavedNode: PVirtualNode;
 
-  SVD_FileDecoded: Boolean;
-  SVD_DeviceDecoded: Boolean;
+  SVD_Decoded: Boolean;
 
   SVD_Device: TSVD_Device;
 
@@ -269,9 +235,6 @@ begin
   // FillChar( SVD_Device, 0, Sizeof( SVD_Device ) );
 
   SVDFileName := '';
-  SVDInfoCount := 0;
-  SVDWarningCount := 0;
-  SVDErrorCount := 0;
   Application.OnIdle := ApplicationIdle;
   Application.Title := 'IDA Helper';
   ActiveNode := nil;
@@ -302,12 +265,12 @@ procedure TMainForm.GotoLineNumberOfSVDFile;
 var
   FirstVisibleLine: Integer;
   LineNumber: Integer;
-  Point: TPoint;
 begin
-  if SVDErrorWarningLineArrayCount = 0 then
+
+  if SVDErrorWarningLineArray.Count = 0 then
     Exit;
 
-  LineNumber := SVDErrorWarningLineArray[ SVDErrorWarningLineArrayIndex ].SVDLogLine;
+  LineNumber := SVDErrorWarningLineArray.Items[ SVDErrorWarningLineArrayIndex ].SVDLogLine;
 
   // we define number of the first visible line
   FirstVisibleLine := SendMessage( MemoSVDLog.Handle, EM_GETFIRSTVISIBLELINE, 0, 0 );
@@ -315,7 +278,7 @@ begin
   // we install a line with the cursor as the first visible
   SendMessage( MemoSVDLog.Handle, EM_LINESCROLL, 0, LineNumber - FirstVisibleLine );
 
-  LineNumber := SVDErrorWarningLineArray[ SVDErrorWarningLineArrayIndex ].SVDFileLine;
+  LineNumber := SVDErrorWarningLineArray.Items[ SVDErrorWarningLineArrayIndex ].SVDFileLine;
   MemoSVDFile.SetFocus;
   MemoSVDFile.SelStart := MemoSVDFile.Perform( EM_LINEINDEX, LineNumber, 0 );
   MemoSVDFile.SelLength := 0;
@@ -349,7 +312,7 @@ begin
   begin
     with StatusBar.Canvas do
     begin
-      Font.name := 'FixedSys';
+      Font.Name := 'FixedSys';
       Brush.Color := clBtnFace;
 
       if Panel.Index = 0 then // Error
@@ -376,7 +339,7 @@ begin
   begin
     with StatusBar.Canvas do
     begin
-      Font.name := 'FixedSys';
+      Font.Name := 'FixedSys';
       Font.Color := clBlack;
       Brush.Color := clBtnFace;
 
@@ -403,8 +366,6 @@ end;
 procedure TMainForm.btnExpandTreeClick( Sender: TObject );
 begin
   VST_Main.FullExpand( VST_Main.GetFirstChild( nil ) );
-  VST_Peripheral.FullExpand( );
-  VST_Interrupt.FullExpand( );
 end;
 
 // *** INFO M211: A:\CY8C5888LP.svd (Line 9)
@@ -420,13 +381,8 @@ end;
 // Input File name '6C79A68C-1945-48BB-A20B-4FACA9A46231' does not match the tag <name> in the <device> section:
 //
 procedure TMainForm.UpdataSVDFileCheckResult;
-var
-  I: Integer;
-  LineNumber: Integer;
-  LineArryIndex: Cardinal;
-  LineArryCapacity: Cardinal;
 
-  // (Line 71525)
+// (Line 71525)
   function GetLineNumber( LineIndex: Cardinal ): Integer;
   var
     StrStartPos, StrEndPos: Integer;
@@ -445,58 +401,39 @@ var
     end;
   end;
 
+var
+  I: Integer;
+  SVDErrorWarningLine: PSVDErrorWarningLine;
 begin
+  SVDInfoCount := 0;
   SVDErrorCount := 0;
   SVDWarningCount := 0;
-  SVDInfoCount := 0;
 
-  LineArryIndex := 0;
-  LineArryCapacity := 256;
-
-  SVDErrorWarningLineArrayCount := 0;
-  SVDErrorWarningLineArrayIndex := 0;
-  SetLength( SVDErrorWarningLineArray, LineArryCapacity );
+  SVDErrorWarningLineArray.Init( 4 );
 
   for I := 0 to MemoSVDLog.Lines.Count - 1 do
   begin
     if Pos( SVDFileErrorStr, MemoSVDLog.Lines[ I ] ) > 0 then
     begin
       Inc( SVDErrorCount );
-      Inc( SVDErrorWarningLineArrayCount );
-
-      SVDErrorCount := SVDErrorCount + 1;
-      SVDErrorWarningLineArray[ LineArryIndex ].SVDLogLine := I;
-      SVDErrorWarningLineArray[ LineArryIndex ].SVDFileLine := GetLineNumber( I );
-
-      if True then
-        TArrayHelper< TSVDErrorWarningLine >.Increment( SVDErrorWarningLineArray, LineArryIndex, LineArryCapacity )
-      else
-      begin
-        Inc( LineArryIndex );
-        if LineArryIndex = LineArryCapacity then
-        begin
-          LineArryCapacity := LineArryCapacity + LineArryCapacity div 2;
-          SetLength( SVDErrorWarningLineArray, LineArryCapacity );
-        end;
-      end;
+      SVDErrorWarningLine := SVDErrorWarningLineArray.NewItem( );
+      SVDErrorWarningLine.SVDLogLine := I;
+      SVDErrorWarningLine.SVDFileLine := GetLineNumber( I );
     end;
 
     if Pos( SVDFileWarningStr, MemoSVDLog.Lines[ I ] ) > 0 then
     begin
       Inc( SVDWarningCount );
-      Inc( SVDErrorWarningLineArrayCount );
-
-      SVDErrorWarningLineArray[ LineArryIndex ].SVDLogLine := I;
-      SVDErrorWarningLineArray[ LineArryIndex ].SVDFileLine := GetLineNumber( I );
-
-      TArrayHelper< TSVDErrorWarningLine >.Increment( SVDErrorWarningLineArray, LineArryIndex, LineArryCapacity );
+      SVDErrorWarningLine := SVDErrorWarningLineArray.NewItem( );
+      SVDErrorWarningLine.SVDLogLine := I;
+      SVDErrorWarningLine.SVDFileLine := GetLineNumber( I );
     end;
 
     if Pos( SVDFileInfoStr, MemoSVDLog.Lines[ I ] ) > 0 then
       SVDInfoCount := SVDInfoCount + 1;
   end;
 
-  SetLength( SVDErrorWarningLineArray, LineArryIndex );
+  SVDErrorWarningLineArray.Trim( );
 end;
 
 procedure TMainForm.VST_MainFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
@@ -504,7 +441,7 @@ var
   MainData: PVST_MainData;
 begin
   MainData := VST_Main.GetNodeData( Node );
-  MainData.name := '';
+  MainData.Name := '';
   MainData.value := '';
 end;
 
@@ -520,74 +457,9 @@ var
 begin
   DataAll := VST_Main.GetNodeData( Node );
   if Column = 0 then
-    CellText := DataAll.name
+    CellText := DataAll.Name
   else
     CellText := DataAll.value;
-end;
-
-procedure TMainForm.VST_InterruptFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
-var
-  IrqData: PVST_IrqData;
-begin
-  IrqData := VST_Main.GetNodeData( Node );
-  IrqData.name := '';
-  IrqData.Number := '';
-  IrqData.Description := '';
-end;
-
-procedure TMainForm.VST_InterruptGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
-begin
-  NodeDataSize := Sizeof( TVST_IrqData );
-end;
-
-procedure TMainForm.VST_InterruptGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
-  TextType: TVSTTextType; var CellText: String );
-var
-  DataInterrupt: PVST_IrqData;
-begin
-  DataInterrupt := VST_Main.GetNodeData( Node );
-  if Column = 0 then
-    CellText := DataInterrupt.name
-  else if Column = 1 then
-    CellText := DataInterrupt.Number
-  else
-    CellText := DataInterrupt.Description;
-end;
-
-procedure TMainForm.VST_PeripheralFreeNode( Sender: TBaseVirtualTree; Node: PVirtualNode );
-var
-  PeriphData: PVST_PeriphData;
-begin
-  PeriphData := VST_Main.GetNodeData( Node );
-  PeriphData.name := '';
-  PeriphData.Size := '';
-  PeriphData.Offset := '';
-  PeriphData.BaseAddr := '';
-  PeriphData.Description := '';
-  PeriphData.DerivedFrom := '';
-end;
-
-procedure TMainForm.VST_PeripheralGetNodeDataSize( Sender: TBaseVirtualTree; var NodeDataSize: Integer );
-begin
-  NodeDataSize := Sizeof( TVST_PeriphData );
-end;
-
-procedure TMainForm.VST_PeripheralGetText( Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex;
-  TextType: TVSTTextType; var CellText: String );
-var
-  DataPeripheral: PVST_PeriphData;
-begin
-  DataPeripheral := VST_Main.GetNodeData( Node );
-  if Column = 0 then
-    CellText := DataPeripheral.name
-  else if Column = 1 then
-    CellText := DataPeripheral.BaseAddr
-  else if Column = 2 then
-    CellText := DataPeripheral.Offset
-  else if Column = 3 then
-    CellText := DataPeripheral.Size
-  else
-    CellText := DataPeripheral.Description;
 end;
 
 function Indent( ACount: Integer ): String;
@@ -614,20 +486,20 @@ begin
 
   iNode.NodeType := ANode.ElementType;
   iNode.TypeName := XmlNodeTypeName[ iNode.NodeType ];
-  iNode.name := ANode.name;
+  iNode.Name := ANode.Name;
   iNode.value := ANode.value;
   iNode.Depth := ANode.TreeDepth;
 
 {$IFDEF XML_DEBUG}
   MemoIDC.Lines.Add( Format( '%sOnNewNode Depth=%d, Type=%s, name=%s, value=%s', //
-    [ Indent( iNode.Depth ), iNode.Depth, iNode.TypeName, iNode.name, iNode.value ] ) );
+    [ Indent( iNode.Depth ), iNode.Depth, iNode.TypeName, iNode.Name, iNode.value ] ) );
 {$ENDIF}
   //
   if ( ActiveNode = nil ) and ( ANode.ElementType = xeElement ) then
   begin
     ActiveNode := VST_Main.AddChild( nil );
     MainData := VST_Main.GetNodeData( ActiveNode );
-    MainData.name := iNode.name;
+    MainData.Name := iNode.Name;
     MainData.value := '';
     Exit;
   end;
@@ -639,13 +511,13 @@ begin
   begin
     ActiveNode := VST_Main.AddChild( ActiveNode );
     MainData := VST_Main.GetNodeData( ActiveNode );
-    MainData.name := iNode.name;
+    MainData.Name := iNode.Name;
     MainData.value := 'Expand to see more information';
   end else if ANode.ElementType = xeAttribute then
   begin
     ActiveNode := VST_Main.AddChild( ActiveNode );
     MainData := VST_Main.GetNodeData( ActiveNode );
-    MainData.name := 'Attribute name to be set';
+    MainData.Name := 'Attribute name to be set';
     MainData.value := 'Attribute value To be set';
   end else if ANode.ElementType = xeCharData then
   begin
@@ -653,7 +525,7 @@ begin
     begin
       ActiveNode := VST_Main.AddChild( ActiveNode );
       MainData := VST_Main.GetNodeData( ActiveNode );
-      MainData.name := iNode.name;
+      MainData.Name := iNode.Name;
       MainData.value := iNode.value;
     end;
   end;
@@ -692,13 +564,13 @@ begin
 
   iNode.NodeType := ANode.ElementType;
   iNode.TypeName := XmlNodeTypeName[ iNode.NodeType ];
-  iNode.name := ANode.name;
+  iNode.Name := ANode.Name;
   iNode.value := ANode.value;
   iNode.Depth := ANode.TreeDepth;
 
 {$IFDEF XML_DEBUG}
   MemoIDC.Lines.Add( Format( '%sOnLoaded Depth=%d, Type=%s, name=%s, value=%s', //
-    [ Indent( iNode.Depth ), iNode.Depth, iNode.TypeName, iNode.name, iNode.value ] ) );
+    [ Indent( iNode.Depth ), iNode.Depth, iNode.TypeName, iNode.Name, iNode.value ] ) );
 {$ENDIF}
   //
   if ActiveNode = nil then
@@ -709,9 +581,9 @@ begin
     if iNode.Depth <> 0 then
     begin
       MainData := VST_Main.GetNodeData( ActiveNode );
-      MainData.name := iNode.name;
+      MainData.Name := iNode.Name;
 
-      if iNode.name = 'description' then
+      if iNode.Name = 'description' then
         MainData.value := RemoveWhiteSpace( iNode.value )
       else
         MainData.value := iNode.value;
@@ -721,7 +593,7 @@ begin
   end else if ( ANode.ElementType = xeAttribute ) then
   begin
     MainData := VST_Main.GetNodeData( ActiveNode );
-    MainData.name := iNode.name;
+    MainData.Name := iNode.Name;
     MainData.value := iNode.value;
     ActiveNode := ActiveNode.Parent;
   end else if ANode.ElementType = xeCharData then
@@ -729,7 +601,7 @@ begin
     if False then
     begin
       MainData := VST_Main.GetNodeData( ActiveNode );
-      MainData.name := iNode.name;
+      MainData.Name := iNode.Name;
       MainData.value := iNode.value;
       ActiveNode := ActiveNode.Parent;
     end;
@@ -771,6 +643,7 @@ begin
   MemoSVDFile.Lines.LoadFromFile( SVDFileName );
   MemoSVDLog.Lines.Clear;
 
+  Output := '';
   if True then
   begin
     ExecAndCaptureReal( SVDConvExeName, SVDFileName,
@@ -814,8 +687,6 @@ end;
 
 procedure TMainForm.btnCollapseTreeClick( Sender: TObject );
 begin
-  VST_Peripheral.FullCollapse( );
-  VST_Interrupt.FullCollapse( );
   VST_Main.FullCollapse( );
 end;
 
@@ -832,12 +703,6 @@ begin
   VST_Main.Clear;
   VST_Main.Invalidate;
 
-  VST_Peripheral.Clear;
-  VST_Peripheral.Invalidate;
-
-  VST_Interrupt.Clear;
-  VST_Interrupt.Invalidate;
-
   if not Assigned( XmlDoc ) then
   begin
     XmlDoc := TNativeXml.Create( Self );
@@ -849,9 +714,8 @@ begin
 
   ActiveNode := nil;
 
-  SVD_DeviceDecoded := False;
-  // -----------------------------------------------------------------------------------------------
-  SVD_FileDecoded := False;
+  SVD_Decoded := False;
+
   VST_Main.BeginUpdate;
   ProgressBarVisible( True );
 
@@ -865,17 +729,10 @@ begin
   end;
 
   ProgressBarVisible( False );
-  VST_Main.EndUpdate;
-
-  Decode_VST_Main( );
   btnExpandTreeClick( Self );
-
-  SVD_FileDecoded := True;
-  // -----------------------------------------------------------------------------------------------
-
+  VST_Main.EndUpdate;
   DecodeDevice( );
-  // -----------------------------------------------------------------------------------------------
-  SVD_DeviceDecoded := True;
+  SVD_Decoded := True;
 end;
 
 procedure TMainForm.btnGotoFirstClick( Sender: TObject );
@@ -886,15 +743,15 @@ end;
 
 procedure TMainForm.btnGotoLastClick( Sender: TObject );
 begin
-  SVDErrorWarningLineArrayIndex := SVDErrorWarningLineArrayCount - 1;
+  SVDErrorWarningLineArrayIndex := SVDErrorWarningLineArray.Count - 1;
   GotoLineNumberOfSVDFile;
 end;
 
 procedure TMainForm.btnGotoNextClick( Sender: TObject );
 begin
   Inc( SVDErrorWarningLineArrayIndex );
-  if SVDErrorWarningLineArrayIndex = SVDErrorWarningLineArrayCount then
-    SVDErrorWarningLineArrayIndex := SVDErrorWarningLineArrayCount - 1;
+  if SVDErrorWarningLineArrayIndex = SVDErrorWarningLineArray.Count then
+    SVDErrorWarningLineArrayIndex := SVDErrorWarningLineArray.Count - 1;
   GotoLineNumberOfSVDFile;
 end;
 
@@ -909,175 +766,6 @@ end;
 procedure TMainForm.About1Click( Sender: TObject );
 begin
   AboutBox.ShowModal;
-end;
-
-function TMainForm.Decode_VST_Main: Boolean;
-type
-  TVST_PeriphInfo = record
-    Node: PVirtualNode;
-    name: String;
-  end;
-
-var
-  I: Integer;
-  Found: Boolean;
-
-  NodeData: PVST_MainData;
-  PeriphData: TVST_PeriphData;
-  IrqData: TVST_IrqData;
-
-  ANode: PVirtualNode;
-  BNode: PVirtualNode;
-  CNode: PVirtualNode;
-
-  SVD_Peripherals: TArray< TVST_PeriphInfo >;
-  SVD_PerphCount: Cardinal;
-  SVD_PerphCapacity: Cardinal;
-begin
-  Found := False;
-  ANode := VST_Main.GetFirstChild( nil );
-  if not Assigned( ANode ) then
-    Exit;
-  NodeData := VST_Main.GetNodeData( ANode );
-  if NodeData.name <> 'device' then
-    Exit;
-
-  ANode := VST_Main.GetFirstChild( ANode );
-  if not Assigned( ANode ) then
-    Exit;
-
-  while Assigned( ANode ) do
-  begin
-    NodeData := VST_Main.GetNodeData( ANode );
-    if NodeData.name = 'peripherals' then
-    begin
-      Found := True;
-      break;
-    end;
-    ANode := VST_Main.GetNextSibling( ANode );
-  end;
-
-  if not Found then
-    Exit;
-
-  SVD_PerphCount := 0;
-  SVD_PerphCapacity := 128;
-  SetLength( SVD_Peripherals, SVD_PerphCapacity );
-
-  ANode := VST_Main.GetFirstChild( ANode ); // peripherals.peripheral
-  while Assigned( ANode ) do
-  begin
-    NodeData := VST_Main.GetNodeData( ANode );
-    if NodeData.name = 'peripheral' then
-    begin
-      PeriphData.name := '';
-      PeriphData.Size := '';
-      PeriphData.Offset := '';
-      PeriphData.BaseAddr := '';
-      PeriphData.Description := '';
-      PeriphData.DerivedFrom := '';
-
-      IrqData.name := '';
-      IrqData.Number := '';
-      IrqData.Description := '';
-
-      BNode := VST_Main.GetFirstChild( ANode );
-      while Assigned( BNode ) do
-      begin
-        NodeData := VST_Main.GetNodeData( BNode );
-        if NodeData.name = 'addressBlock' then
-        begin
-          CNode := VST_Main.GetFirstChild( BNode );
-          while Assigned( CNode ) do
-          begin
-            NodeData := VST_Main.GetNodeData( CNode );
-            if NodeData.name = 'offset' then
-              PeriphData.Offset := NodeData.value
-            else if NodeData.name = 'size' then
-              PeriphData.Size := NodeData.value;
-            CNode := VST_Main.GetNextSibling( CNode );
-          end;
-        end else if NodeData.name = 'interrupt' then
-        begin
-          CNode := VST_Main.GetFirstChild( BNode );
-          while Assigned( CNode ) do
-          begin
-            NodeData := VST_Main.GetNodeData( CNode );
-            if NodeData.name = 'name' then
-              IrqData.name := NodeData.value
-            else if NodeData.name = 'value' then
-              IrqData.Number := NodeData.value
-            else if NodeData.name = 'description' then
-              // IrqData.Description := RemoveWhiteSpace( NodeData.value );
-              IrqData.Description := NodeData.value;
-
-            CNode := VST_Main.GetNextSibling( CNode );
-          end;
-        end else if NodeData.name = 'name' then
-          PeriphData.name := NodeData.value
-        else if NodeData.name = 'description' then
-          // PeriphData.Description := RemoveWhiteSpace( NodeData.value )
-          PeriphData.Description := NodeData.value
-        else if NodeData.name = 'baseAddress' then
-          PeriphData.BaseAddr := NodeData.value
-        else if NodeData.name = 'derivedFrom' then
-          PeriphData.DerivedFrom := NodeData.value;
-
-        // Find next node
-        BNode := VST_Main.GetNextSibling( BNode );
-      end;
-
-      CNode := VST_Peripheral.AddChild( nil );
-
-      // Add Seg to Array to query late
-      SVD_Peripherals[ SVD_PerphCount ].name := PeriphData.name;
-      SVD_Peripherals[ SVD_PerphCount ].Node := CNode;
-      TArrayHelper< TVST_PeriphInfo >.Increment( SVD_Peripherals, SVD_PerphCount, SVD_PerphCapacity );
-
-      if PeriphData.DerivedFrom <> '' then
-      begin
-        for I := 0 to SVD_PerphCount - 1 do
-        begin
-          if PeriphData.DerivedFrom = SVD_Peripherals[ I ].name then
-          begin
-            NodeData := VST_Main.GetNodeData( SVD_Peripherals[ I ].Node );
-            if PeriphData.BaseAddr = '' then // Never
-              PeriphData.BaseAddr := PVST_PeriphData( NodeData ).BaseAddr;
-            if PeriphData.Description = '' then // Maybe
-              PeriphData.Description := PVST_PeriphData( NodeData ).Description;
-            if PeriphData.Offset = '' then // Always ?
-              PeriphData.Offset := PVST_PeriphData( NodeData ).Offset;
-            if PeriphData.Size = '' then // Always ?
-              PeriphData.Size := PVST_PeriphData( NodeData ).Size;
-
-            break;
-          end;
-        end;
-      end;
-
-      // To here, PeriphData is ready to add to VST_Peripheral
-      NodeData := VST_Main.GetNodeData( CNode );
-
-      PVST_PeriphData( NodeData ).name := PeriphData.name;
-      PVST_PeriphData( NodeData ).Description := PeriphData.Description;
-      PVST_PeriphData( NodeData ).BaseAddr := PeriphData.BaseAddr;
-      PVST_PeriphData( NodeData ).Offset := PeriphData.Offset;
-      PVST_PeriphData( NodeData ).Size := PeriphData.Size;
-
-      if ( IrqData.name <> '' ) or ( IrqData.Number <> '' ) then
-      begin
-        CNode := VST_Interrupt.AddChild( nil );
-        NodeData := VST_Main.GetNodeData( CNode );
-
-        PVST_IrqData( NodeData ).name := IrqData.name;
-        PVST_IrqData( NodeData ).Description := IrqData.Description;
-        PVST_IrqData( NodeData ).Number := IrqData.Number;
-      end;
-    end;
-
-    // Find next node named 'peripheral'
-    ANode := VST_Main.GetNextSibling( ANode );
-  end;
 end;
 
 {
@@ -1104,6 +792,8 @@ begin
   if SVDFileName = '' then
     Exit;
 
+  AOutputString := '';
+
   MemoSVDHeader.Lines.Clear;
   case RadioGroup1.ItemIndex of
     0:
@@ -1120,7 +810,7 @@ begin
   begin
     ExecAndCapture( SVDConvExeName, '"' + SVDFileName + '" --generate=header --debug-headerfile --fields=' +
       FieldOption, AOutputString );
-    MemoSVDLog.Text := AOutputString;
+    MemoSVDLog.Text := String( AOutputString );
   end else begin
     ExecAndCaptureReal( SVDConvExeName, '"' + SVDFileName + '" --generate=header --debug-headerfile --fields=' +
       FieldOption,
@@ -1176,6 +866,93 @@ begin
   MemoIDC.Lines.SaveToFile( DlgSave.FileName );
 end;
 
+// <xxxx derivedFrom="derivedFromName">
+// . <name>Name</name>
+// </xxxx>
+//
+// <peripheral derivedFrom="TIMER0">
+//
+// <register derivedFrom="CR">
+// <register derivedFrom="TIMER0.CR">
+//
+// <cluster derivedFrom="TX[%s]">
+// <cluster derivedFrom="TIMER0.TX[%s]">
+//
+// <field derivedFrom="IDR0">
+// <field derivedFrom="CR.IDR0">
+// <field derivedFrom="TIMER0.CR.IDR0">
+//
+// <enumeratedValues derivedFrom="VAL">
+// <enumeratedValues derivedFrom="IDR0.VAL">
+// <enumeratedValues derivedFrom="CR.IDR0.VAL">
+// <enumeratedValues derivedFrom="TIMER0.CR.IDR0.VAL">
+//
+function TMainForm.FindDerivedObject( FullName: String; ObjectType: TSVD_ObjectType ): PSVD_Object;
+var
+  ObjectNames: TDynArray< String >;
+  ObjectName: PString;
+  AObject: PSVD_Object;
+  Name: String;
+  DelimiterPos: Integer;
+  Offset: Integer;
+  Index: Integer;
+  I: Integer;
+begin
+  ObjectNames.Init( 2 );
+
+  Offset := 1;
+  while True do
+  begin
+    ObjectName := ObjectNames.NewItem;
+
+    DelimiterPos := Pos( '.', FullName, Offset );
+    if DelimiterPos > 0 then
+    begin
+      // "TIMER0.CR.IDR0.VAL"
+      // -12345678 : Offset=1, DelimiterPos=7, Length=6
+      ObjectName^ := Copy( FullName, Offset, DelimiterPos - Offset );
+      // "TIMER0.CR.IDR0.VAL"
+      // -12345678, Offset=8
+      Offset := DelimiterPos + 1;
+    end else begin
+      // "TIMER0.CR.IDR0.VAL"
+      // -123456789ABCDEF0123 : Offset=0x11, FullNameLength=0x13
+      ObjectName^ := Copy( FullName, Offset, Length( FullName ) - Offset + 1 );
+      break;
+    end;
+  end;
+
+  // TIMER0 CR IDR0 VAL
+  // CR IDR0 VAL
+  // IDR0 VAL
+  // VAL
+  ObjectNames.Trim;
+
+  for I := 0 to SVD_Device.ObjectArray.Count - 1 do
+  begin
+    Result := SVD_Device.ObjectArray.GetItem( I );
+    if Result._type <> ObjectType then
+      Continue;
+
+    Index := ObjectNames.Count - 1;
+    AObject := Result;
+    while AObject <> nil do
+    begin
+      Name := AObject.Name;
+      if Name <> ObjectNames.Items[ Index ] then
+        break;
+
+      dec( Index );
+      if Index < 0 then
+        Exit;
+
+      AObject := AObject.Parent;
+    end;
+  end;
+
+  Result := nil;
+end;
+
 procedure TMainForm.DecodeEnumeratedValue( Node: PVirtualNode; eumeratedValue: PSVD_EnumeratedValue );
 var
   Data: PVST_MainData;
@@ -1185,348 +962,364 @@ begin
   begin
     Data := VST_Main.GetNodeData( Node );
 
-    if Data.name = 'derivedFrom' then
-    begin
-      eumeratedValue.DerivedFrom := Data.value;
-
-    end else if Data.name = 'name' then
-      eumeratedValue.name := Data.value
-    else if Data.name = 'description' then
+    if Data.Name = 'name' then
+      eumeratedValue.Name := Data.value
+    else if Data.Name = 'description' then
       eumeratedValue.Description := Data.value
-    else if Data.name = 'value' then
+    else if Data.Name = 'value' then
       eumeratedValue.value := Str2Int( Data.value )
-    else if Data.name = 'isDefault' then
+    else if Data.Name = 'isDefault' then
       eumeratedValue.isDefault := Data.value;
 
     Node := VST_Main.GetNextSibling( Node );
   end;
-
 end;
 
 procedure TMainForm.ClearDevice;
 begin
-  SetLength( SVD_Device.peripherals.peripheralArray, 0 );
-  SVD_Device.cpu := Default ( TSVD_CPU );
   SVD_Device := Default ( TSVD_Device );
 end;
 
-procedure TMainForm.DecodeEnumeratedValues( Node: PVirtualNode; eumeratedValues: PSVD_EnumeratedValues );
+function TMainForm.DecodeEnumeratedValues( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
 var
+  DerivedFromObject: PSVD_Object;
+  eumeratedValues: PSVD_EnumeratedValues;
+
   Data: PVST_MainData;
-  eumeratedValueCapacity: Cardinal;
+  eumeratedValue: PSVD_EnumeratedValue;
 begin
-  eumeratedValueCapacity := 128;
-  SetLength( eumeratedValues.enumeratedValueArray, eumeratedValueCapacity );
+  Result := False;
+  eumeratedValues := AObject.enumeratedValues;
+
+  eumeratedValues.enumeratedValueArray.Init( 4 );
+
   Node := VST_Main.GetFirstChild( Node );
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-
-    if Data.name = 'enumeratedValue' then
+    if Data.Name = 'derivedFrom' then
     begin
-      eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ].enumeratedValues := eumeratedValues;
-      DecodeEnumeratedValue( Node,
-        Addr( eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ] ) );
-      if eumeratedValues.enumeratedValueArray[ eumeratedValues.enumeratedValueCount ].enumeratedValues <> nil then
-        TArrayHelper< TSVD_EnumeratedValue >.Increment( eumeratedValues.enumeratedValueArray,
-          eumeratedValues.enumeratedValueCount, eumeratedValueCapacity );
+      DerivedFromObject := FindDerivedObject( Data.value, otEnumeratedValues );
+      if DerivedFromObject = nil then
+      begin
+        eumeratedValues.enumeratedValueArray.Purge( );
+        Exit;
+      end;
+
+      eumeratedValues^ := DerivedFromObject.enumeratedValues^;
+      eumeratedValues.DerivedFrom := Data.value;
+
+    end else if Data.Name = 'name' then
+    begin
+      eumeratedValues.Name := Data.value;
+      AObject.Name := Data.value;
+
+    end else if Data.Name = 'usage' then
+    begin
+      eumeratedValues.usage := Data.value;
+    end else if Data.Name = 'enumeratedValue' then
+    begin
+      eumeratedValue := eumeratedValues.enumeratedValueArray.NewItem( );
+      eumeratedValue.Parent := eumeratedValues;
+      DecodeEnumeratedValue( Node, eumeratedValue );
     end;
 
     Node := VST_Main.GetNextSibling( Node );
   end;
 
-  SetLength( eumeratedValues.enumeratedValueArray, eumeratedValues.enumeratedValueCount );
+  eumeratedValues.enumeratedValueArray.Trim( );
+
+  Result := True;
 end;
 
-procedure TMainForm.DecodeField( Node: PVirtualNode; field: PSVD_Field );
+function TMainForm.DecodeField( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
 var
+  DerivedFromObject: PSVD_Object;
   Data: PVST_MainData;
+  field: PSVD_Field;
+
+  LObject: PSVD_Object;
 begin
+  Result := False;
+
+  field := AObject.field;
 
   Node := VST_Main.GetFirstChild( Node );
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
 
-    if Data.name = 'derivedFrom' then
+    if Data.Name = 'derivedFrom' then
     begin
+      DerivedFromObject := FindDerivedObject( Data.value, otField );
+      if DerivedFromObject = nil then
+        Exit;
+
+      field^ := DerivedFromObject.field^;
       field.DerivedFrom := Data.value;
-    end else if Data.name = 'name' then
-      field.name := Data.value
-    else if Data.name = 'description' then
+
+    end else if Data.Name = 'name' then
+    begin
+      AObject.Name := Data.value;
+      field.Name := Data.value;
+
+    end else if Data.Name = 'description' then
       field.Description := Data.value
 
-    else if Data.name = 'dim' then
+    else if Data.Name = 'dim' then
       field.dimElement.dim := Str2Int( Data.value )
-    else if Data.name = 'dimIncrement' then
+    else if Data.Name = 'dimIncrement' then
       field.dimElement.dimIncrement := Str2Int( Data.value )
-    else if Data.name = 'dimIndex' then
+    else if Data.Name = 'dimIndex' then
       field.dimElement.dimIndex := Data.value
-    else if Data.name = 'dimArrayIndex' then
+    else if Data.Name = 'dimArrayIndex' then
       field.dimElement.dimArrayIndex := Data.value
 
-    else if Data.name = 'bitOffset' then
+    else if Data.Name = 'bitOffset' then
     begin
       field.bitRange.bitRangeType := brOffsetWidth;
       field.bitRange.bitRangeOffsetWidth.bitOffset := Str2Int( Data.value )
-    end else if Data.name = 'bitWidth' then
+    end else if Data.Name = 'bitWidth' then
     begin
       field.bitRange.bitRangeType := brOffsetWidth;
       field.bitRange.bitRangeOffsetWidth.bitWidth := Str2Int( Data.value );
-    end else if Data.name = 'lsb' then
+    end else if Data.Name = 'lsb' then
     begin
       field.bitRange.bitRangeType := brLsbMsb;
       field.bitRange.bitRangeLsbMsb.lsb := Str2Int( Data.value )
-    end else if Data.name = 'msb' then
+    end else if Data.Name = 'msb' then
     begin
       field.bitRange.bitRangeType := brLsbMsb;
       field.bitRange.bitRangeLsbMsb.msb := Str2Int( Data.value )
-    end else if Data.name = 'bitRange' then
+    end else if Data.Name = 'bitRange' then
     begin
       field.bitRange.bitRangeType := brString;
       field.bitRange.bitRangeString := Data.value;
-    end else if Data.name = 'enumeratedValues' then
+    end else if Data.Name = 'enumeratedValues' then
     begin
-      field.enumeratedValues.field := field;
-      DecodeEnumeratedValues( Node, Addr( field.enumeratedValues ) );
+      LObject := SVD_Device.ObjectArray.NewItem( );
+      LObject._type := otEnumeratedValues;
+      LObject.Parent := AObject;
+
+      LObject.enumeratedValues := Addr( field.enumeratedValues );
+      LObject.enumeratedValues.Parent := field;
+      if not DecodeEnumeratedValues( Node, LObject ) then
+      begin
+        SVD_Device.ObjectArray.Pop( );
+      end;
     end;
 
     Node := VST_Main.GetNextSibling( Node );
   end;
 
+  Result := True;
 end;
 
-procedure TMainForm.DecodeFields( Node: PVirtualNode; fields: PSVD_Fields );
+function TMainForm.DecodeRegister( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
 var
+  DerivedFromObject: PSVD_Object;
+  _register: PSVD_Register;
+
   Data: PVST_MainData;
-  fieldCapacity: Cardinal;
+  LObject: PSVD_Object;
+  LNode: PVirtualNode;
 begin
-  fieldCapacity := 128;
-  SetLength( fields.fieldArray, fieldCapacity );
+  Result := False;
+
+  _register := AObject._register;
+  _register.fieldArray.Init( 8 );
 
   Node := VST_Main.GetFirstChild( Node );
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-
-    if Data.name = 'field' then
+    if Data.Name = 'derivedFrom' then
     begin
-      fields.fieldArray[ fields.fieldCount ].fields := fields;
-      DecodeField( Node, Addr( fields.fieldArray[ fields.fieldCount ] ) );
-      if fields.fieldArray[ fields.fieldCount ].fields <> nil then
-        TArrayHelper< TSVD_Field >.Increment( fields.fieldArray, fields.fieldCount, fieldCapacity );
-    end;
+      DerivedFromObject := FindDerivedObject( Data.value, otRegister );
+      if DerivedFromObject = nil then
+      begin
+        _register.fieldArray.Purge( );
+        Exit;
+      end;
 
-    Node := VST_Main.GetNextSibling( Node );
-  end;
-
-  SetLength( fields.fieldArray, fields.fieldCount );
-end;
-
-procedure TMainForm.DecodeRegister( Node: PVirtualNode; _register: PSVD_Register );
-var
-  Data: PVST_MainData;
-begin
-
-  Node := VST_Main.GetFirstChild( Node );
-  while Assigned( Node ) do
-  begin
-    Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'derivedFrom' then
-    begin
+      _register^ := DerivedFromObject._register^;
       _register.DerivedFrom := Data.value;
-    end else if Data.name = 'name' then
-      _register.name := Data.value
-    else if Data.name = 'displayName' then
+
+    end else if Data.Name = 'name' then
+    begin
+      AObject.Name := Data.value;
+      _register.Name := Data.value;
+
+    end else if Data.Name = 'displayName' then
       _register.displayName := Data.value
-    else if Data.name = 'description' then
+    else if Data.Name = 'description' then
       _register.Description := Data.value
-    else if Data.name = 'addressOffset' then
+    else if Data.Name = 'addressOffset' then
       _register.addressOffset := Str2Int( Data.value )
-    else if Data.name = 'alternateGroup' then
+    else if Data.Name = 'alternateGroup' then
       _register.alternateGroup := Data.value
-    else if Data.name = 'alternateRegister' then
+    else if Data.Name = 'alternateRegister' then
       _register.alternateRegister := Data.value
-    else if Data.name = 'dataType' then
+    else if Data.Name = 'dataType' then
       _register.dataType := Data.value
 
-    else if Data.name = 'size' then
+    else if Data.Name = 'size' then
       _register.registerProperties.Size := Str2Int( Data.value )
-    else if Data.name = 'resetMask' then
+    else if Data.Name = 'resetMask' then
       _register.registerProperties.resetMask := Str2Int( Data.value )
-    else if Data.name = 'resetValue' then
+    else if Data.Name = 'resetValue' then
       _register.registerProperties.resetValue := Str2Int( Data.value )
-    else if Data.name = 'access' then
+    else if Data.Name = 'access' then
       _register.registerProperties.access := Data.value
-    else if Data.name = 'protection' then
+    else if Data.Name = 'protection' then
       _register.registerProperties.protection := Data.value
 
-    else if Data.name = 'dim' then
+    else if Data.Name = 'dim' then
       _register.dimElement.dim := Str2Int( Data.value )
-    else if Data.name = 'dimIncrement' then
+    else if Data.Name = 'dimIncrement' then
       _register.dimElement.dimIncrement := Str2Int( Data.value )
-    else if Data.name = 'dimIndex' then
+    else if Data.Name = 'dimIndex' then
       _register.dimElement.dimIndex := Data.value
-    else if Data.name = 'dimArrayIndex' then
+    else if Data.Name = 'dimArrayIndex' then
       _register.dimElement.dimArrayIndex := Data.value
 
-    else if Data.name = 'fields' then
+    else if Data.Name = 'fields' then
     begin
-      _register.fields._register := _register;
-      DecodeFields( Node, Addr( _register.fields ) );
+      LNode := VST_Main.GetFirstChild( Node );
+      while Assigned( LNode ) do
+      begin
+        Data := VST_Main.GetNodeData( LNode );
+
+        if Data.Name = 'field' then
+        begin
+          LObject := SVD_Device.ObjectArray.NewItem( );
+          LObject._type := otField;
+          LObject.Parent := AObject;
+
+          LObject.field := _register.fieldArray.NewItem( );
+          LObject.field.Parent := _register;
+          if not DecodeField( LNode, LObject ) then
+          begin
+            SVD_Device.ObjectArray.Pop( );
+            _register.fieldArray.Pop( );
+          end;
+        end;
+
+        LNode := VST_Main.GetNextSibling( LNode );
+      end;
+
+      _register.fieldArray.Trim( );
     end;
 
     Node := VST_Main.GetNextSibling( Node );
   end;
 
+  Result := True;
 end;
 
-procedure TMainForm.DecodeCluster( Node: PVirtualNode; cluster: PSVD_Cluster );
+function TMainForm.DecodeCluster( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
 var
-  I: Integer;
-  Data: PVST_MainData;
-  registerCapacity: Cardinal;
-  clusterCapacity: Cardinal;
-  derivedFromFound: Boolean;
-begin
-  registerCapacity := 128;
-  SetLength( cluster.registerArray, registerCapacity );
+  DerivedFromObject: PSVD_Object;
+  cluster: PSVD_Cluster;
 
-  clusterCapacity := 128;
-  SetLength( cluster.clusterArray, clusterCapacity );
+  Data: PVST_MainData;
+  LObject: PSVD_Object;
+begin
+  Result := False;
+
+  cluster := AObject.cluster;
+
+  cluster.registerArray.Init( 4 );
+  cluster.clusterArray.Init( 2 );
 
   Node := VST_Main.GetFirstChild( Node );
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'derivedFrom' then
+    if Data.Name = 'derivedFrom' then
     begin
-      derivedFromFound := False;
-      if cluster.registers <> nil then // cluster in regiters
+      DerivedFromObject := FindDerivedObject( Data.value, otCluster );
+      if DerivedFromObject = nil then
       begin
-        for I := 0 to cluster.registers.clusterCount - 1 do // Exclude Self
-        begin
-
-        end;
-
-      end else if cluster.cluster <> nil then
-      begin // cluster in cluster
-
-      end;
-
-      for I := 0 to cluster.registers.clusterCount - 1 do // Exclude Self
-      begin
-        if cluster.cluster.clusterArray[ I ].registers = nil then // Invalid cluster
-          Continue;
-
-        if cluster.cluster.clusterArray[ I ].cluster = nil then // Invalid cluster
-          Continue;
-
-        if Data.value = cluster.cluster.clusterArray[ I ].name then // Parent Found
-        begin
-          derivedFromFound := True;
-          // Values are inherit from derivedFrom Peripheral
-          // MemCpy( peripheral, peripheral.peripherals.peripheralArray[ I ], sizeof( TSVD_Peripheral ) )
-          cluster^ := cluster.cluster.clusterArray[ I ];
-          cluster.DerivedFrom := Data.value;
-          break;
-        end;
-      end;
-
-      if not derivedFromFound then
-      begin
-        cluster.cluster := nil; // Mark this peripheral as Invalid
+        cluster.registerArray.Trim( );
+        cluster.clusterArray.Trim( );
         Exit;
-      end
-      // Elements specified underneath will override inherited values.
-    end else if Data.name = 'name' then
-      cluster.name := Data.value
-    else if Data.name = 'displayName' then
+      end;
+
+      AObject.cluster^ := DerivedFromObject.cluster^;
+      cluster.DerivedFrom := Data.Name;
+
+    end else if Data.Name = 'name' then
+    begin
+      AObject.Name := Data.value;
+      cluster.Name := Data.value;
+
+    end else if Data.Name = 'displayName' then
       cluster.displayName := Data.value
-    else if Data.name = 'description' then
+    else if Data.Name = 'description' then
       cluster.Description := Data.value
-    else if Data.name = 'alternateCluster' then
+    else if Data.Name = 'alternateCluster' then
       cluster.alternateCluster := Data.value
-    else if Data.name = 'addressOffset' then
+    else if Data.Name = 'addressOffset' then
       cluster.addressOffset := Str2Int( Data.value )
 
-    else if Data.name = 'size' then
+    else if Data.Name = 'size' then
       cluster.registerProperties.Size := Str2Int( Data.value )
-    else if Data.name = 'resetMask' then
+    else if Data.Name = 'resetMask' then
       cluster.registerProperties.resetMask := Str2Int( Data.value )
-    else if Data.name = 'resetValue' then
+    else if Data.Name = 'resetValue' then
       cluster.registerProperties.resetValue := Str2Int( Data.value )
-    else if Data.name = 'access' then
+    else if Data.Name = 'access' then
       cluster.registerProperties.access := Data.value
-    else if Data.name = 'protection' then
+    else if Data.Name = 'protection' then
       cluster.registerProperties.protection := Data.value
 
-    else if Data.name = 'dim' then
+    else if Data.Name = 'dim' then
       cluster.dimElement.dim := Str2Int( Data.value )
-    else if Data.name = 'dimIncrement' then
+    else if Data.Name = 'dimIncrement' then
       cluster.dimElement.dimIncrement := Str2Int( Data.value )
-    else if Data.name = 'dimIndex' then
+    else if Data.Name = 'dimIndex' then
       cluster.dimElement.dimIndex := Data.value
-    else if Data.name = 'dimArrayIndex' then
+    else if Data.Name = 'dimArrayIndex' then
       cluster.dimElement.dimArrayIndex := Data.value
 
-    else if Data.name = 'register' then
+    else if Data.Name = 'register' then
     begin
-      cluster.registerArray[ cluster.registerCount ].registers := nil;
-      cluster.registerArray[ cluster.registerCount ].cluster := cluster;
-      DecodeRegister( Node, Addr( cluster.registerArray[ cluster.registerCount ] ) );
-      TArrayHelper< TSVD_Register >.Increment( cluster.registerArray, cluster.registerCount, registerCapacity );
-    end else if Data.name = 'cluster' then
+      LObject := SVD_Device.ObjectArray.NewItem;
+      LObject.Parent := AObject;
+      LObject._type := otRegister;
+
+      LObject._register := cluster.registerArray.NewItem( );
+      LObject._register.parentPeripheral := nil;
+      LObject._register.parentCluster := cluster;
+      if not DecodeRegister( Node, LObject ) then
+      begin
+        cluster.registerArray.Pop( );
+        SVD_Device.ObjectArray.Pop( );
+      end;
+    end else if Data.Name = 'cluster' then
     begin
-      cluster.clusterArray[ cluster.clusterCount ].registers := nil;
-      cluster.clusterArray[ cluster.clusterCount ].cluster := cluster;
-      DecodeCluster( Node, Addr( cluster.clusterArray[ cluster.clusterCount ] ) );
-      TArrayHelper< TSVD_Cluster >.Increment( cluster.clusterArray, cluster.clusterCount, clusterCapacity );
+      LObject := SVD_Device.ObjectArray.NewItem;
+      LObject.Parent := AObject;
+      LObject._type := otCluster;
+
+      LObject.cluster := cluster.clusterArray.NewItem( );
+      LObject.cluster.parentPeripheral := nil;
+      LObject.cluster.parentCluster := cluster;
+      if not DecodeCluster( Node, LObject ) then
+      begin
+        cluster.clusterArray.Pop( );
+        SVD_Device.ObjectArray.Pop( );
+      end;
     end;
 
     Node := VST_Main.GetNextSibling( Node );
   end;
 
-  SetLength( cluster.registerArray, cluster.registerCount );
-  SetLength( cluster.clusterArray, cluster.clusterCount );
-end;
+  cluster.registerArray.Trim( );
+  cluster.clusterArray.Trim( );
 
-procedure TMainForm.DecodeRegisters( Node: PVirtualNode; registers: PSVD_Registers );
-var
-  Data: PVST_MainData;
-  registerCapacity: Cardinal;
-  clusterCapacity: Cardinal;
-begin
-  registerCapacity := 128;
-  SetLength( registers.registerArray, registerCapacity );
-
-  clusterCapacity := 128;
-  SetLength( registers.clusterArray, clusterCapacity );
-
-  Node := VST_Main.GetFirstChild( Node );
-  while Assigned( Node ) do
-  begin
-    Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'register' then
-    begin
-      registers.registerArray[ registers.registerCount ].registers := registers;
-      registers.registerArray[ registers.registerCount ].cluster := nil;
-      DecodeRegister( Node, Addr( registers.registerArray[ registers.registerCount ] ) );
-      TArrayHelper< TSVD_Register >.Increment( registers.registerArray, registers.registerCount, registerCapacity );
-    end else if Data.name = 'cluster' then
-    begin
-      registers.clusterArray[ registers.clusterCount ].registers := registers;
-      registers.clusterArray[ registers.clusterCount ].cluster := nil;
-
-      DecodeCluster( Node, Addr( registers.clusterArray[ registers.clusterCount ] ) );
-      TArrayHelper< TSVD_Cluster >.Increment( registers.clusterArray, registers.clusterCount, clusterCapacity );
-    end;
-
-    Node := VST_Main.GetNextSibling( Node );
-  end;
-
-  SetLength( registers.registerArray, registers.registerCount );
-  SetLength( registers.clusterArray, registers.clusterCount );
+  Result := True;
 end;
 
 procedure TMainForm.DecodeAddressBlock( Node: PVirtualNode; addressBlock: PSVD_AddressBlock );
@@ -1537,9 +1330,9 @@ begin
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'offset' then
+    if Data.Name = 'offset' then
       addressBlock.Offset := Str2Int( Data.value )
-    else if Data.name = 'size' then
+    else if Data.Name = 'size' then
       addressBlock.Size := Str2Int( Data.value );
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1554,11 +1347,11 @@ begin
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'name' then
-      interrupt.name := Data.value
-    else if Data.name = 'description' then
+    if Data.Name = 'name' then
+      interrupt.Name := Data.value
+    else if Data.Name = 'description' then
       interrupt.Description := Data.value
-    else if Data.name = 'value' then
+    else if Data.Name = 'value' then
       interrupt.value := Str2Int( Data.value );
 
     Node := VST_Main.GetNextSibling( Node );
@@ -1566,131 +1359,136 @@ begin
 
 end;
 
-procedure TMainForm.DecodePeripheral( Node: PVirtualNode; peripheral: PSVD_Peripheral );
+function TMainForm.DecodePeripheral( Node: PVirtualNode; AObject: PSVD_Object ): Boolean;
 var
-  I: Integer;
+  DerivedFromObject: PSVD_Object;
+  peripheral: PSVD_Peripheral;
+  addressBlock: PSVD_AddressBlock;
+
   Data: PVST_MainData;
-  derivedFromFound: Boolean;
-  addressBlockCapacity: Cardinal;
+  LNode: PVirtualNode;
+  LObject: PSVD_Object;
 begin
-  addressBlockCapacity := 8;
-  SetLength( peripheral.addressBlockArray, addressBlockCapacity );
+  Result := False;
+
+  peripheral := AObject.peripheral;
+
+  peripheral.addressBlockArray.Init( 2 );
+  peripheral.clusterArray.Init( 2 );
+  peripheral.registerArray.Init( 4 );
 
   Node := VST_Main.GetFirstChild( Node );
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'derivedFrom' then
+    if Data.Name = 'derivedFrom' then
     begin
-      derivedFromFound := False;
-      for I := 0 to peripheral.peripherals.peripheralCount - 1 do // Exclude Self
+      DerivedFromObject := FindDerivedObject( Data.value, otPeripheral );
+      if DerivedFromObject = nil then
       begin
-        if peripheral.peripherals.peripheralArray[ I ].peripherals = nil then // Invalid peripheral
-          Continue;
-
-        if Data.value = peripheral.peripherals.peripheralArray[ I ].name then // Parent Found
-        begin
-          derivedFromFound := True;
-          // Values are inherit from derivedFrom Peripheral
-          // MemCpy( peripheral, peripheral.peripherals.peripheralArray[ I ], sizeof( TSVD_Peripheral ) )
-          peripheral^ := peripheral.peripherals.peripheralArray[ I ];
-          peripheral.DerivedFrom := Data.value;
-          break;
-        end;
-      end;
-
-      if not derivedFromFound then
-      begin
-        peripheral.peripherals := nil; // Mark this peripheral as Invalid
+        peripheral.addressBlockArray.Purge( );
+        peripheral.registerArray.Purge( );
+        peripheral.clusterArray.Purge( );
         Exit;
       end;
-      // Elements specified underneath will override inherited values.
-    end else if Data.name = 'name' then
-      peripheral.name := Data.value
-    else if Data.name = 'version' then
+
+      peripheral^ := DerivedFromObject.peripheral^;
+      peripheral.DerivedFrom := Data.value;
+
+    end else if Data.Name = 'name' then
+    begin
+      AObject.Name := Data.value;
+      peripheral.Name := Data.value;
+    end else if Data.Name = 'version' then
       peripheral.version := Data.value
-    else if Data.name = 'description' then
+    else if Data.Name = 'description' then
       peripheral.Description := Data.value
-    else if Data.name = 'alternatePeripheral' then
+    else if Data.Name = 'alternatePeripheral' then
       peripheral.alternatePeripheral := Data.value
-    else if Data.name = 'prependToName' then
+    else if Data.Name = 'prependToName' then
       peripheral.prependToName := Data.value
-    else if Data.name = 'appendToName' then
+    else if Data.Name = 'appendToName' then
       peripheral.appendToName := Data.value
-    else if Data.name = 'baseAddress' then
+    else if Data.Name = 'baseAddress' then
       peripheral.baseAddress := Str2Int( Data.value )
 
-    else if Data.name = 'size' then
+    else if Data.Name = 'size' then
       peripheral.registerProperties.Size := Str2Int( Data.value )
-    else if Data.name = 'resetMask' then
+    else if Data.Name = 'resetMask' then
       peripheral.registerProperties.resetMask := Str2Int( Data.value )
-    else if Data.name = 'resetValue' then
+    else if Data.Name = 'resetValue' then
       peripheral.registerProperties.resetValue := Str2Int( Data.value )
-    else if Data.name = 'access' then
+    else if Data.Name = 'access' then
       peripheral.registerProperties.access := Data.value
-    else if Data.name = 'protection' then
+    else if Data.Name = 'protection' then
       peripheral.registerProperties.protection := Data.value
 
-    else if Data.name = 'dim' then
+    else if Data.Name = 'dim' then
       peripheral.dimElement.dim := Str2Int( Data.value )
-    else if Data.name = 'dimIncrement' then
+    else if Data.Name = 'dimIncrement' then
       peripheral.dimElement.dimIncrement := Str2Int( Data.value )
-    else if Data.name = 'dimIndex' then
+    else if Data.Name = 'dimIndex' then
       peripheral.dimElement.dimIndex := Data.value
-    else if Data.name = 'dimArrayIndex' then
+    else if Data.Name = 'dimArrayIndex' then
       peripheral.dimElement.dimArrayIndex := Data.value
 
-    else if Data.name = 'interrupt' then
+    else if Data.Name = 'interrupt' then
       DecodeInterrupt( Node, Addr( peripheral.interrupt ) )
-    else if Data.name = 'addressBlock' then
+    else if Data.Name = 'addressBlock' then
     begin
-      DecodeAddressBlock( Node, Addr( peripheral.addressBlockArray[ peripheral.addressBlockCount ] ) );
-      TArrayHelper< TSVD_AddressBlock >.Increment( peripheral.addressBlockArray, peripheral.addressBlockCount,
-        addressBlockCapacity );
-    end else if Data.name = 'registers' then
+      addressBlock := peripheral.addressBlockArray.NewItem( );
+      DecodeAddressBlock( Node, addressBlock );
+    end else if Data.Name = 'registers' then
     begin
-      peripheral.registers.peripheral := peripheral;
-      DecodeRegisters( Node, Addr( peripheral.registers ) );
-    end;
 
-    Node := VST_Main.GetNextSibling( Node );
-  end;
-
-  SetLength( peripheral.addressBlockArray, peripheral.addressBlockCount );
-end;
-
-procedure TMainForm.DecodePeripherals( Node: PVirtualNode; peripherals: PSVD_Peripherals );
-var
-  Data: PVST_MainData;
-  peripheralCapacity: Cardinal;
-begin
-  peripheralCapacity := 128;
-  SetLength( peripherals.peripheralArray, peripheralCapacity );
-
-  Node := VST_Main.GetFirstChild( Node );
-  while Assigned( Node ) do
-  begin
-    Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'peripheral' then
-    begin
-      peripherals.peripheralArray[ peripherals.peripheralCount ].peripherals := peripherals;
-      DecodePeripheral( Node, Addr( peripherals.peripheralArray[ peripherals.peripheralCount ] ) );
-
-      if peripherals.peripheralArray[ peripherals.peripheralCount ].peripherals <> nil then
+      LNode := VST_Main.GetFirstChild( Node );
+      while Assigned( LNode ) do
       begin
-        // peripherals.peripheralArray[ peripherals.peripheralCount ].derivedFrom <> nil
-        // and derivedFrom is Found, Add current peripheral to peripheralArray, Update peripheralCount
-        TArrayHelper< TSVD_Peripheral >.Increment( peripherals.peripheralArray, peripherals.peripheralCount,
-          peripheralCapacity );
-      end else begin
-        // Ignore this peripheral, peripheralCount is not updated
+        Data := VST_Main.GetNodeData( LNode );
+
+        if Data.Name = 'register' then
+        begin
+          LObject := SVD_Device.ObjectArray.NewItem;
+          LObject.Parent := AObject;
+          LObject._type := otRegister;
+
+          LObject._register := peripheral.registerArray.NewItem( );
+          LObject._register.parentPeripheral := peripheral;
+          LObject._register.parentCluster := nil;
+          if not DecodeRegister( LNode, LObject ) then
+          begin
+            peripheral.registerArray.Pop( );
+            SVD_Device.ObjectArray.Pop( );
+          end;
+        end else if Data.Name = 'cluster' then
+        begin
+          LObject := SVD_Device.ObjectArray.NewItem;
+          LObject.Parent := AObject;
+          LObject._type := otCluster;
+
+          LObject.cluster := peripheral.clusterArray.NewItem( );
+          LObject.cluster.parentPeripheral := peripheral;
+          LObject.cluster.parentCluster := nil;
+          if not DecodeCluster( LNode, LObject ) then
+          begin
+            peripheral.clusterArray.Pop( );
+            SVD_Device.ObjectArray.Pop( );
+          end;
+        end;
+
+        LNode := VST_Main.GetNextSibling( LNode );
       end;
+
     end;
 
     Node := VST_Main.GetNextSibling( Node );
   end;
 
-  SetLength( peripherals.peripheralArray, peripherals.peripheralCount );
+  peripheral.registerArray.Trim( );
+  peripheral.clusterArray.Trim( );
+  peripheral.addressBlockArray.Trim( );
+
+  Result := True;
 end;
 
 procedure TMainForm.DecodeCPU( Node: PVirtualNode; cpu: PSVD_CPU );
@@ -1701,75 +1499,39 @@ begin
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'name' then
-      cpu.name := Data.value
-    else if Data.name = 'revision' then
+    if Data.Name = 'name' then
+      cpu.Name := Data.value
+    else if Data.Name = 'revision' then
       cpu.revision := Data.value
-    else if Data.name = 'endian' then
+    else if Data.Name = 'endian' then
       cpu.endian := Data.value
-    else if Data.name = 'itcmPresent' then
+    else if Data.Name = 'itcmPresent' then
       cpu.itcmPresent := Data.value
-    else if Data.name = 'dtcmPresent' then
+    else if Data.Name = 'dtcmPresent' then
       cpu.dtcmPresent := Data.value
-    else if Data.name = 'icachePresent' then
+    else if Data.Name = 'icachePresent' then
       cpu.icachePresent := Data.value
-    else if Data.name = 'dcachePresent' then
+    else if Data.Name = 'dcachePresent' then
       cpu.dcachePresent := Data.value
-    else if Data.name = 'mpuPresent' then
+    else if Data.Name = 'mpuPresent' then
       cpu.mpuPresent := Data.value
-    else if Data.name = 'fpuPresent' then
+    else if Data.Name = 'fpuPresent' then
       cpu.fpuPresent := Data.value
-    else if Data.name = 'fpuDP' then
+    else if Data.Name = 'fpuDP' then
       cpu.fpuDP := Data.value
-    else if Data.name = 'vtorPresent' then
+    else if Data.Name = 'vtorPresent' then
       cpu.vtorPresent := Data.value
-    else if Data.name = 'vendorSystickConfig' then
+    else if Data.Name = 'vendorSystickConfig' then
       cpu.vendorSystickConfig := Data.value
 
-    else if Data.name = 'sauNumRegions' then
+    else if Data.Name = 'sauNumRegions' then
       cpu.sauNumRegions := Str2Int( Data.value )
-    else if Data.name = 'nvicPrioBits' then
+    else if Data.Name = 'nvicPrioBits' then
       cpu.nvicPrioBits := Str2Int( Data.value )
-    else if Data.name = 'deviceNumInterrupts' then
+    else if Data.Name = 'deviceNumInterrupts' then
       cpu.deviceNumInterrupts := Str2Int( Data.value );
 
     Node := VST_Main.GetNextSibling( Node );
-  end;
-end;
-
-procedure TMainForm.DecodeDevice0( );
-var
-  Data: PVST_MainData;
-  peripheralCapacity: Cardinal;
-  I: Integer;
-  J: Integer;
-  K: Integer;
-  L: Integer;
-begin
-  ClearDevice( );
-
-  peripheralCapacity := 4;
-  SetLength( SVD_Device.peripherals.peripheralArray, peripheralCapacity );
-  for I := 0 to 3 do
-  begin
-    SVD_Device.peripherals.peripheralArray[ I ].name := 'Peripheral';
-    SetLength( SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray, 4 );
-    for J := 0 to 3 do
-    begin
-      SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].name := 'Register';
-      SetLength( SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray, 4 );
-      for K := 0 to 3 do
-      begin
-        SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray[ K ].name := 'Field';
-        SetLength( SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray[ K ]
-          .enumeratedValues.enumeratedValueArray, 4 );
-        for L := 0 to 3 do
-        begin
-          SVD_Device.peripherals.peripheralArray[ I ].registers.registerArray[ J ].fields.fieldArray[ K ]
-            .enumeratedValues.enumeratedValueArray[ L ].name := 'enumeratedValue';
-        end;
-      end;
-    end;
   end;
 end;
 
@@ -1777,54 +1539,80 @@ procedure TMainForm.DecodeDevice( );
 var
   Data: PVST_MainData;
   Node: PVirtualNode;
+  LNode: PVirtualNode;
+  LObject: PSVD_Object;
 begin
   ClearDevice( );
+
+  SVD_Device.ObjectArray.Init( 2 );
+  SVD_Device.peripheralArray.Init( 2 );
 
   Node := VST_Main.GetFirstChild( nil );
   while Assigned( Node ) do
   begin
     Data := VST_Main.GetNodeData( Node );
-    if Data.name = 'device' then
+    if Data.Name = 'device' then
     begin
       Node := VST_Main.GetFirstChild( Node );
       while Assigned( Node ) do
       begin
         Data := VST_Main.GetNodeData( Node );
-        if Data.name = 'name' then
-          SVD_Device.name := Data.value
-        else if Data.name = 'vendor' then
+        if Data.Name = 'name' then
+          SVD_Device.Name := Data.value
+        else if Data.Name = 'vendor' then
           SVD_Device.vendor := Data.value
-        else if Data.name = 'vendorID' then
+        else if Data.Name = 'vendorID' then
           SVD_Device.vendorID := Data.value
-        else if Data.name = 'series' then
+        else if Data.Name = 'series' then
           SVD_Device.series := Data.value
-        else if Data.name = 'version' then
+        else if Data.Name = 'version' then
           SVD_Device.version := Data.value
-        else if Data.name = 'description' then
+        else if Data.Name = 'description' then
           SVD_Device.Description := Data.value
-        else if Data.name = 'addressUnitBits' then
+        else if Data.Name = 'addressUnitBits' then
           SVD_Device.addressUnitBits := Str2Int( Data.value )
-        else if Data.name = 'width' then
+        else if Data.Name = 'width' then
           SVD_Device.Width := Str2Int( Data.value )
 
-        else if Data.name = 'size' then
+        else if Data.Name = 'size' then
           SVD_Device.registerProperties.Size := Str2Int( Data.value )
-        else if Data.name = 'resetMask' then
+        else if Data.Name = 'resetMask' then
           SVD_Device.registerProperties.resetMask := Str2Int( Data.value )
-        else if Data.name = 'resetValue' then
+        else if Data.Name = 'resetValue' then
           SVD_Device.registerProperties.resetValue := Str2Int( Data.value )
-        else if Data.name = 'access' then
+        else if Data.Name = 'access' then
           SVD_Device.registerProperties.access := Data.value
-        else if Data.name = 'protection' then
+        else if Data.Name = 'protection' then
           SVD_Device.registerProperties.protection := Data.value
 
-        else if Data.name = 'cpu' then
+        else if Data.Name = 'cpu' then
           DecodeCPU( Node, Addr( SVD_Device.cpu ) )
 
-        else if Data.name = 'peripherals' then
+        else if Data.Name = 'peripherals' then
         begin
-          SVD_Device.peripherals.Device := Addr( SVD_Device );
-          DecodePeripherals( Node, Addr( SVD_Device.peripherals ) );
+
+          LNode := VST_Main.GetFirstChild( Node );
+          while Assigned( LNode ) do
+          begin
+            Data := VST_Main.GetNodeData( LNode );
+            if Data.Name = 'peripheral' then
+            begin
+              LObject := SVD_Device.ObjectArray.NewItem( );
+              LObject._type := otPeripheral;
+              LObject.Parent := nil;
+
+              LObject.peripheral := SVD_Device.peripheralArray.NewItem( );
+              if not DecodePeripheral( LNode, LObject ) then
+              begin
+                SVD_Device.peripheralArray.Pop( );
+                SVD_Device.ObjectArray.Pop( );
+              end;
+            end;
+
+            LNode := VST_Main.GetNextSibling( LNode );
+          end;
+
+          SVD_Device.peripheralArray.Trim( );
         end;
 
         Node := VST_Main.GetNextSibling( Node );
@@ -1833,16 +1621,16 @@ begin
       Node := VST_Main.GetNextSibling( Node );
     end;
 
-    SVD_DeviceDecoded := True;
   end;
+
+  SVD_Device.ObjectArray.Trim( );
 end;
 
 procedure TMainForm.btnMakeScriptClick( Sender: TObject );
 var
-  I: Integer;
   StringList: TStringList;
 begin
-  if not SVD_DeviceDecoded then
+  if not SVD_Decoded then
     Exit;
 
   MemoIDC.Lines.Clear;

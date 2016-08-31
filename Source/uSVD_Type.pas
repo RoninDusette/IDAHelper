@@ -141,7 +141,8 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, // Windows
   System.Classes, System.Variants, System.SysUtils, // System
-  uMisc, Generics.Collections, Generics.Defaults;
+  Generics.Collections, Generics.Defaults,
+  uMisc, uDynArray;
 
 type
   // -----------------------------------------------------------------------------------------------
@@ -228,12 +229,9 @@ type
   PSVD_CPU = ^TSVD_CPU;
 
   PSVD_Device = ^TSVD_Device;
-  PSVD_Peripherals = ^TSVD_Peripherals;
   PSVD_Peripheral = ^TSVD_Peripheral;
-  PSVD_Registers = ^TSVD_Registers;
   PSVD_Cluster = ^TSVD_Cluster;
   PSVD_Register = ^TSVD_Register;
-  PSVD_Fields = ^TSVD_Fields;
   PSVD_Field = ^TSVD_Field;
   PSVD_EnumeratedValues = ^TSVD_EnumeratedValues;
   PSVD_EnumeratedValue = ^TSVD_EnumeratedValue;
@@ -289,7 +287,7 @@ type
     0 <-----> disabled -> "the clock source clk0 is turned off"
     1 <-----> enabled --> "the clock source clk1 is running" }
   TSVD_EnumeratedValue = record
-    enumeratedValues: PSVD_EnumeratedValues;
+    parent: PSVD_EnumeratedValues;
 
     { enumeratedValue derivedFrom=<identifierType> }
     derivedFrom: String;
@@ -309,7 +307,10 @@ type
   end;
 
   TSVD_EnumeratedValues = record
-    field: PSVD_Field;
+    parent: PSVD_Field;
+
+    { The field is cloned from a previously defined field with a unique name. }
+    derivedFrom: String;
 
     { name specfies a reference to this enumeratedValues section for reuse purposes
       this name does not appear in the System Viewer nor the Header File. }
@@ -318,8 +319,7 @@ type
     { usage specifies whether this enumeration is to be used for read or write or (read and write) accesses }
     usage: String;
 
-    enumeratedValueCount: Cardinal;
-    enumeratedValueArray: TArray< TSVD_EnumeratedValue >;
+    enumeratedValueArray: TDynArray< TSVD_EnumeratedValue >;
   end;
 
   { A bit-field has a name that is unique within the register.
@@ -330,7 +330,7 @@ type
     A field may define an enumeratedValue in order
     to make the display more intuitive to read. }
   TSVD_Field = record
-    fields: PSVD_Fields;
+    parent: PSVD_Register;
 
     { The field is cloned from a previously defined field with a unique name. }
     derivedFrom: String;
@@ -348,17 +348,9 @@ type
     enumeratedValues: TSVD_EnumeratedValues;
   end;
 
-  TSVD_Fields = record
-    _register: PSVD_Register;
-
-    name: String;
-    fieldCount: Cardinal;
-    fieldArray: TArray< TSVD_Field >;
-  end;
-
   TSVD_Register = record
-    registers: PSVD_Registers;
-    cluster: PSVD_Cluster;
+    parentPeripheral: PSVD_Peripheral;
+    parentCluster: PSVD_Cluster;
 
     derivedFrom: String;
 
@@ -393,14 +385,14 @@ type
     { V1.1: dataType specifies a CMSIS compliant native dataType for a register (i.e. signed, unsigned, pointer) }
     dataType: String;
 
-    fields: TSVD_Fields;
+    fieldArray: TDynArray< TSVD_Field >;
   end;
 
   TSVD_Cluster = record
-    registers: PSVD_Registers;
+    parentPeripheral: PSVD_Peripheral;
 
     { 1.3: nesting of cluster is supported }
-    cluster: PSVD_Cluster;
+    parentCluster: PSVD_Cluster;
 
     derivedFrom: String;
 
@@ -422,26 +414,11 @@ type
     registerProperties: TSVD_RegisterProperties;
 
     { 1.3: nesting of cluster is supported }
-    clusterCount: Cardinal;
-    clusterArray: TArray< TSVD_Cluster >;
-
-    registerCount: Cardinal;
-    registerArray: TArray< TSVD_Register >;
-  end;
-
-  { the registers section can have an arbitrary list of cluster and register sections }
-  TSVD_Registers = record
-    peripheral: PSVD_Peripheral;
-
-    clusterCount: Cardinal;
-    clusterArray: TArray< TSVD_Cluster >;
-
-    registerCount: Cardinal;
-    registerArray: TArray< TSVD_Register >;
+    clusterArray: TDynArray< TSVD_Cluster >;
+    registerArray: TDynArray< TSVD_Register >;
   end;
 
   TSVD_Peripheral = record
-    peripherals: PSVD_Peripherals;
     { name specifies the name of a peripheral. This name is used for the System View and device header file }
     name: String;
     derivedFrom: String;
@@ -475,23 +452,40 @@ type
     { addressBlock specifies *one or more* address ranges that are assigned exclusively to this peripheral.
       derived peripherals may have no addressBlock, however none-derived peripherals are required to specify
       at least one address block }
-    addressBlockCount: Cardinal;
-    addressBlockArray: TArray< TSVD_AddressBlock >;
+    addressBlockArray: TDynArray< TSVD_AddressBlock >;
 
     { interrupt specifies can specify one or more interrtupts by name, description and value }
     interrupt: TSVD_Interrupt;
 
-    { registers section contains all registers owned by the peripheral.
-      In case a peripheral gets derived it does not have its own registers section, hence this section is optional.
-      A unique peripheral without a registers section is not allowed }
-    registers: TSVD_Registers;
+    { can have an arbitrary list of cluster and register sections }
+    clusterArray: TDynArray< TSVD_Cluster >;
+    registerArray: TDynArray< TSVD_Register >;
   end;
 
-  TSVD_Peripherals = record
-    device: PSVD_Device;
-    peripheralCount: Cardinal;
-    peripheralArray: TArray< TSVD_Peripheral >;
+  TSVD_ObjectType = ( otAny, otEnumeratedValues, otField, otRegister, otCluster, otPeripheral );
+
+  PSVD_Object = ^TSVD_Object;
+
+  TSVD_Object = record
+    parent: PSVD_Object;
+    name: String;
+    _type: TSVD_ObjectType;
+    case TSVD_ObjectType of
+      otAny:
+        ( data: Pointer );
+      otEnumeratedValues:
+        ( enumeratedValues: PSVD_EnumeratedValues );
+      otField:
+        ( field: PSVD_Field );
+      otRegister:
+        ( _Register: PSVD_Register );
+      otCluster:
+        ( cluster: PSVD_Cluster );
+      otPeripheral:
+        ( peripheral: PSVD_Peripheral );
   end;
+
+  TSVD_ObjectArray = TDynArray< TSVD_Object >;
 
   TSVD_Device = record
     vendor: String;
@@ -530,40 +524,8 @@ type
 
     cpu: TSVD_CPU;
 
-    peripherals: TSVD_Peripherals;
-  end;
-
-  TSVD_PairPeripheral = record
-    name: string;
-    peripheral: PSVD_Peripheral;
-  end;
-
-  TSVD_PairRegister = record
-    name: string;
-    _register: PSVD_Register;
-  end;
-
-  TSVD_PairCluster = record
-    name: string;
-    cluster: PSVD_Cluster;
-  end;
-
-  TSVD_PairField = record
-    name: string;
-    field: PSVD_Field;
-  end;
-
-  TSVD_PairEnumeratedValues = record
-    name: string;
-    enumeratedValues: PSVD_EnumeratedValues;
-  end;
-
-  TSVD_PairName = record
-    PairPeripheral: TArray< TSVD_PairPeripheral >;
-    PairRegister: TArray< TSVD_PairRegister >;
-    PairCluster: TArray< TSVD_PairCluster >;
-    PairField: TArray< TSVD_PairField >;
-    PairEnumeratedValues: TArray< TSVD_PairEnumeratedValues >;
+    peripheralArray: TDynArray< TSVD_Peripheral >;
+    ObjectArray: TSVD_ObjectArray;
   end;
 
 function Str2Int( const S: String ): Cardinal;

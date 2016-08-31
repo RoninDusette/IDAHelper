@@ -102,7 +102,7 @@ begin
 
 end;
 
-procedure IDC_AddEnum( StringList: TStringList; fields: TSVD_Fields );
+procedure IDC_AddEnum( StringList: TStringList; _Register: TSVD_Register );
 var
   I: Integer;
   J: Integer;
@@ -120,95 +120,6 @@ var
   derivedFrom: String;
   Name: String;
 begin
-  peripheralName := fields._Register.registers.Peripheral.Name;
-  registerName := fields._Register.Name;
-  for I := 0 to fields.fieldCount - 1 do
-  begin
-    fieldName := fields.fieldArray[ I ].Name;
-    // USART1_CR1_DEDT_
-    Name := peripheralName + '_' + registerName + '_' + fieldName + '_';
-
-    fieldDescription := fields.fieldArray[ I ].description;
-    for J := 0 to fields.fieldArray[ I ].fields.fieldCount - 1 do
-    begin
-      // BitRange mandatory :
-      GetFieldPosMask( fields.fieldArray[ I ].fields.fieldArray[ J ].BitRange, fieldPos, fieldMask );
-
-      derivedFrom := fields.fieldArray[ I ].fields.fieldArray[ J ].derivedFrom;
-      { ----------------------------------------------------------------------------------------------------------------
-        <field>
-        <name>MODE</name>
-        <description>Reverse input data</description>
-        <bitOffset>5</bitOffset>
-        <bitWidth>2</bitWidth>
-        <!-- enumeratedValues -->
-        <!-- nothing -->
-        <!-- /enumeratedValues -->
-
-        </field>
-
-        TIMER0_CR_MODE_MASK, TIMER0_CR_MODE_0, TIMER0_CR_MODE_1, TIMER0_CR_MODE_2, TIMER0_CR_MODE_3
-      }
-      if fields.fieldArray[ I ].fields.fieldArray[ J ].EnumeratedValues.enumeratedValueCount = 0 then
-      begin
-
-      end;
-
-      {
-        <field>
-        <name>MODE</name>
-        <description>Reverse input data</description>
-        <bitOffset>5</bitOffset>
-        <bitWidth>2</bitWidth>
-        </field>
-
-        TIMER0_CR_MODE_MASK, TIMER0_CR_MODE_0, TIMER0_CR_MODE_1, TIMER0_CR_MODE_2, TIMER0_CR_MODE_3
-
-        <field>
-
-        <name>EN</name>
-        <description>Enable</description>
-        <bitRange>[0:0]</bitRange>
-        <access>read-write</access>
-
-        <enumeratedValues>
-
-        <name>ENUM</name> : ignore it, it is used for other to be derived only ?
-        <usage>read-write</usage>
-
-        <enumeratedValue>
-        <name>Disable</name>
-        <description>Timer is disabled and does not operate</description>
-        <value>0</value>
-        </enumeratedValue>
-
-        <enumeratedValue>
-        <name>Enable</name>
-        <description>Timer is enabled and can operate</description>
-        <value>1</value>
-        </enumeratedValue>
-
-        </enumeratedValues>
-        </field>
-
-        TIMER0_CR_EN_MASK : TIMER0_CR_EN_Diable, TIMER0_CR_EN_EN_Enable
-      }
-
-      for K := 0 to fields.fieldArray[ I ].fields.fieldArray[ J ].EnumeratedValues.enumeratedValueCount - 1 do
-      begin
-        enumName := fields.fieldArray[ I ].fields.fieldArray[ J ].EnumeratedValues.enumeratedValueArray[ K ].Name;
-        enumValue := fields.fieldArray[ I ].fields.fieldArray[ J ].EnumeratedValues.enumeratedValueArray[ K ].value;
-        enumDescription := fields.fieldArray[ I ].fields.fieldArray[ J ].EnumeratedValues.enumeratedValueArray[ K ]
-          .description;
-        if enumName = '' then
-        begin
-
-        end else begin
-
-        end;
-      end;
-    end;
-  end;
 end;
 
 procedure IDC_DecodeDevice( SVD_Device: TSVD_Device; var StringList: TStringList );
@@ -361,7 +272,7 @@ begin
 
     IDC_DecodeDevice( SVD_Device, StringList );
 
-    for I := 0 to SVD_Device.peripherals.peripheralCount - 1 do
+    for I := 0 to SVD_Device.peripheralArray.Count - 1 do
       IDC_DecodePeripheral( Peripheral, StringList );
 
     MainStringList.Add( '' );

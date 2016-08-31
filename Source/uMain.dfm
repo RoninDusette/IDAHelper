@@ -334,31 +334,11 @@ object MainForm: TMainForm
         Align = alLeft
         BevelOuter = bvNone
         TabOrder = 2
-        object Splitter3: TSplitter
-          Left = 0
-          Top = 492
-          Width = 800
-          Height = 10
-          Cursor = crVSplit
-          Align = alBottom
-          ExplicitLeft = 4
-          ExplicitTop = 476
-        end
-        object Splitter2: TSplitter
-          Left = 0
-          Top = 602
-          Width = 800
-          Height = 10
-          Cursor = crVSplit
-          Align = alBottom
-          ExplicitLeft = 4
-          ExplicitTop = 596
-        end
         object VST_Main: TVirtualStringTree
           Left = 0
           Top = 0
           Width = 800
-          Height = 492
+          Height = 712
           Align = alClient
           Header.AutoSizeIndex = 0
           Header.Font.Charset = DEFAULT_CHARSET
@@ -383,86 +363,6 @@ object MainForm: TMainForm
               Position = 1
               Width = 800
               WideText = 'Value'
-            end>
-        end
-        object VST_Peripheral: TVirtualStringTree
-          Left = 0
-          Top = 502
-          Width = 800
-          Height = 100
-          Align = alBottom
-          Header.AutoSizeIndex = 0
-          Header.Font.Charset = DEFAULT_CHARSET
-          Header.Font.Color = clWindowText
-          Header.Font.Height = -11
-          Header.Font.Name = 'Tahoma'
-          Header.Font.Style = []
-          Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
-          ScrollBarOptions.AlwaysVisible = True
-          TabOrder = 1
-          OnFreeNode = VST_PeripheralFreeNode
-          OnGetText = VST_PeripheralGetText
-          OnGetNodeDataSize = VST_PeripheralGetNodeDataSize
-          Columns = <
-            item
-              Position = 0
-              Width = 100
-              WideText = 'Name'
-            end
-            item
-              Position = 1
-              Width = 100
-              WideText = 'BaseAddr'
-            end
-            item
-              Position = 2
-              Width = 100
-              WideText = 'Offset'
-            end
-            item
-              Position = 3
-              Width = 100
-              WideText = 'Size'
-            end
-            item
-              Position = 4
-              Width = 120
-              WideText = 'Description'
-            end>
-        end
-        object VST_Interrupt: TVirtualStringTree
-          Left = 0
-          Top = 612
-          Width = 800
-          Height = 100
-          Align = alBottom
-          Header.AutoSizeIndex = 0
-          Header.Font.Charset = DEFAULT_CHARSET
-          Header.Font.Color = clWindowText
-          Header.Font.Height = -11
-          Header.Font.Name = 'Tahoma'
-          Header.Font.Style = []
-          Header.Options = [hoColumnResize, hoDrag, hoShowSortGlyphs, hoVisible]
-          ScrollBarOptions.AlwaysVisible = True
-          TabOrder = 2
-          OnFreeNode = VST_InterruptFreeNode
-          OnGetText = VST_InterruptGetText
-          OnGetNodeDataSize = VST_InterruptGetNodeDataSize
-          Columns = <
-            item
-              Position = 0
-              Width = 100
-              WideText = 'Name'
-            end
-            item
-              Position = 1
-              Width = 100
-              WideText = 'Number'
-            end
-            item
-              Position = 2
-              Width = 300
-              WideText = 'Description'
             end>
         end
       end
@@ -497,7 +397,7 @@ object MainForm: TMainForm
     Left = 488
     Top = 65528
     Bitmap = {
-      494C0101BC00D800A00010001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
+      494C0101BC00D800C40010001000FFFFFFFFFF10FFFFFFFFFFFFFFFF424D3600
       0000000000003600000028000000400000000003000001002000000000000000
       0300000000000000000000000000000000000000000000000000000000000000
       0000000000000000000000000000000000000000000000000000000000000000
@@ -6862,9 +6762,7 @@ object MainForm: TMainForm
     end
   end
   object DlgSave: TSaveDialog
-    Filter = 'SVD Files(*.svd)|*.svd'
-    Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
-    Left = 360
-    Top = 65528
+    Left = 680
+    Top = 424
   end
 end
